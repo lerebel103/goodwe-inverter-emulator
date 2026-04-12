@@ -1,0 +1,36 @@
+services:
+  goodwe-et-inverter-emulator:
+    image: lerebel103/goodwe-et-inverter-emulator:latest
+    build:
+      context: .
+      args:
+        VERSION: ${VERSION:-dev}
+    container_name: goodwe-et-inverter-emulator
+    restart: unless-stopped
+    volumes:
+      - ./config.yaml:/etc/goodwe-emulator/config.yaml
+    environment:
+      TZ: UTC
+    cap_add:
+      - SYS_NICE
+    ports:
+      - 8899:8899
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 256M
+        reservations:
+          cpus: '0.5'
+          memory: 128M
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: 3
+    healthcheck:
+      test: ps aux | grep -v grep | grep -q 'python -m app' || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

@@ -1,0 +1,5 @@
+-r requirements.txt
+ruff==0.15.10
+pytest==9.0.3
+pytest-xdist==3.8.0
+hypothesis==6.151.12
