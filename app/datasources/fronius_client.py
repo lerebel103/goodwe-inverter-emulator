@@ -28,6 +28,8 @@ LEGACY_CHANNEL_REGISTERS = [
 ]
 
 SUNSPEC_BASE_REGISTER = 40000
+SUNSPEC_MODEL_101_ID = 101
+SUNSPEC_MODEL_103_ID = 103
 SUNSPEC_MODEL_160_ID = 160
 SUNSPEC_MAX_MODELS_TO_SCAN = 64
 
@@ -63,36 +65,68 @@ class FroniusClient:
 
     def _read_once(self, client: ModbusTcpClient) -> dict[str, int]:
         string_count = _effective_string_count(self._cfg)
+        model_index = _scan_sunspec_model_index(client, self._cfg.slave_id)
+        inverter_ac = _read_sunspec_inverter_ac_power(client, self._cfg.slave_id, model_index)
 
         if self._cfg.sunspec_model_160_enabled:
-            model_data = _read_sunspec_model_160(client, self._cfg.slave_id, string_count)
+            model_data = _read_sunspec_model_160(client, self._cfg.slave_id, string_count, model_index)
             if model_data:
-                return model_data
+                return {
+                    **model_data,
+                    **inverter_ac,
+                }
 
-        pv_power_w = _read_scaled_i16(
-            client,
-            LEGACY_PV_POWER_REGISTER,
-            LEGACY_PV_POWER_SF_REGISTER,
-            self._cfg.slave_id,
-        )
-        dc_power_w = _read_scaled_i16(
-            client,
-            LEGACY_DC_POWER_REGISTER,
-            LEGACY_DC_POWER_SF_REGISTER,
-            self._cfg.slave_id,
-        )
-        dc_voltage_v = _read_scaled_i16(
-            client,
-            LEGACY_DC_VOLTAGE_REGISTER,
-            LEGACY_DC_VOLTAGE_SF_REGISTER,
-            self._cfg.slave_id,
-        )
-        dc_current_a = _read_scaled_i16(
-            client,
-            LEGACY_DC_CURRENT_REGISTER,
-            LEGACY_DC_CURRENT_SF_REGISTER,
-            self._cfg.slave_id,
-        )
+        legacy_block = _read_register_block(client, LEGACY_PV_POWER_REGISTER, 19, self._cfg.slave_id)
+        if len(legacy_block) == 19:
+            pv_power_w = _read_scaled_i16_from_block(
+                base_register=LEGACY_PV_POWER_REGISTER,
+                block=legacy_block,
+                value_register=LEGACY_PV_POWER_REGISTER,
+                sf_register=LEGACY_PV_POWER_SF_REGISTER,
+            )
+            dc_power_w = _read_scaled_i16_from_block(
+                base_register=LEGACY_PV_POWER_REGISTER,
+                block=legacy_block,
+                value_register=LEGACY_DC_POWER_REGISTER,
+                sf_register=LEGACY_DC_POWER_SF_REGISTER,
+            )
+            dc_voltage_v = _read_scaled_i16_from_block(
+                base_register=LEGACY_PV_POWER_REGISTER,
+                block=legacy_block,
+                value_register=LEGACY_DC_VOLTAGE_REGISTER,
+                sf_register=LEGACY_DC_VOLTAGE_SF_REGISTER,
+            )
+            dc_current_a = _read_scaled_i16_from_block(
+                base_register=LEGACY_PV_POWER_REGISTER,
+                block=legacy_block,
+                value_register=LEGACY_DC_CURRENT_REGISTER,
+                sf_register=LEGACY_DC_CURRENT_SF_REGISTER,
+            )
+        else:
+            pv_power_w = _read_scaled_i16(
+                client,
+                LEGACY_PV_POWER_REGISTER,
+                LEGACY_PV_POWER_SF_REGISTER,
+                self._cfg.slave_id,
+            )
+            dc_power_w = _read_scaled_i16(
+                client,
+                LEGACY_DC_POWER_REGISTER,
+                LEGACY_DC_POWER_SF_REGISTER,
+                self._cfg.slave_id,
+            )
+            dc_voltage_v = _read_scaled_i16(
+                client,
+                LEGACY_DC_VOLTAGE_REGISTER,
+                LEGACY_DC_VOLTAGE_SF_REGISTER,
+                self._cfg.slave_id,
+            )
+            dc_current_a = _read_scaled_i16(
+                client,
+                LEGACY_DC_CURRENT_REGISTER,
+                LEGACY_DC_CURRENT_SF_REGISTER,
+                self._cfg.slave_id,
+            )
 
         pv = _read_optional_channels(client, self._cfg.slave_id, string_count)
 
@@ -114,11 +148,40 @@ class FroniusClient:
         return {
             "pv_power_w": int(pv_power_w),
             **pv,
+            **inverter_ac,
         }
 
 
 def _to_i16(value: int) -> int:
     return value - 0x10000 if value & 0x8000 else value
+
+
+def _read_scaled_from_model_i16(regs: list[int], value_index: int, sf_index: int) -> float:
+    if value_index >= len(regs) or sf_index >= len(regs):
+        return 0.0
+
+    raw = _to_i16(regs[value_index])
+    sf = _to_i16(regs[sf_index])
+
+    # SunSpec int16 "not implemented" sentinel.
+    if raw == -32768 or sf == -32768:
+        return 0.0
+
+    return float(raw * (10**sf))
+
+
+def _read_scaled_from_model_u16(regs: list[int], value_index: int, sf_index: int) -> float:
+    if value_index >= len(regs) or sf_index >= len(regs):
+        return 0.0
+
+    raw_u16 = regs[value_index] & 0xFFFF
+    sf = _to_i16(regs[sf_index])
+
+    # SunSpec uint16 and sunssf "not implemented" sentinels.
+    if raw_u16 == 0xFFFF or sf == -32768:
+        return 0.0
+
+    return float(raw_u16 * (10**sf))
 
 
 def _read_scaled_i16(client: ModbusTcpClient, value_register: int, sf_register: int, slave_id: int) -> float:
@@ -133,6 +196,79 @@ def _read_scaled_i16(client: ModbusTcpClient, value_register: int, sf_register: 
     raw = _to_i16(rr.registers[0])
     sf = _to_i16(sf_rr.registers[0])
     return float(raw * (10**sf))
+
+
+def _read_scaled_i16_from_block(
+    *,
+    base_register: int,
+    block: list[int],
+    value_register: int,
+    sf_register: int,
+) -> float:
+    value_idx = value_register - base_register
+    sf_idx = sf_register - base_register
+    if value_idx < 0 or sf_idx < 0 or value_idx >= len(block) or sf_idx >= len(block):
+        return 0.0
+
+    raw = _to_i16(block[value_idx])
+    sf = _to_i16(block[sf_idx])
+    return float(raw * (10**sf))
+
+
+def _read_sunspec_inverter_ac_power(
+    client: ModbusTcpClient,
+    slave_id: int,
+    model_index: dict[int, tuple[int, int]] | None = None,
+) -> dict[str, int]:
+    # Prefer 3-phase inverter model 103, then fallback to single-phase 101.
+    if model_index is None:
+        model_index = _scan_sunspec_model_index(client, slave_id)
+
+    model_103 = model_index.get(SUNSPEC_MODEL_103_ID)
+    if model_103 is not None:
+        model_start, model_len = model_103
+        regs = _read_register_block(client, model_start, model_len, slave_id)
+        if regs:
+            return {
+                "inverter_current_l1_a": _read_scaled_from_model_u16(regs, value_index=1, sf_index=4),
+                "inverter_current_l2_a": _read_scaled_from_model_u16(regs, value_index=2, sf_index=4),
+                "inverter_current_l3_a": _read_scaled_from_model_u16(regs, value_index=3, sf_index=4),
+                "inverter_voltage_l1_v": _read_scaled_from_model_u16(regs, value_index=5, sf_index=8),
+                "inverter_voltage_l2_v": _read_scaled_from_model_u16(regs, value_index=6, sf_index=8),
+                "inverter_voltage_l3_v": _read_scaled_from_model_u16(regs, value_index=7, sf_index=8),
+                "inverter_frequency_hz": _read_scaled_from_model_u16(regs, value_index=9, sf_index=10),
+                "inverter_active_power_w": int(_read_scaled_from_model_i16(regs, value_index=12, sf_index=16)),
+                "inverter_power_l1_w": int(_read_scaled_from_model_i16(regs, value_index=13, sf_index=16)),
+                "inverter_power_l2_w": int(_read_scaled_from_model_i16(regs, value_index=14, sf_index=16)),
+                "inverter_power_l3_w": int(_read_scaled_from_model_i16(regs, value_index=15, sf_index=16)),
+                "inverter_apparent_power_va": int(_read_scaled_from_model_u16(regs, value_index=19, sf_index=23)),
+                "inverter_apparent_power_l1_va": int(_read_scaled_from_model_u16(regs, value_index=20, sf_index=23)),
+                "inverter_apparent_power_l2_va": int(_read_scaled_from_model_u16(regs, value_index=21, sf_index=23)),
+                "inverter_apparent_power_l3_va": int(_read_scaled_from_model_u16(regs, value_index=22, sf_index=23)),
+                "inverter_reactive_power_var": int(_read_scaled_from_model_i16(regs, value_index=24, sf_index=28)),
+                "inverter_reactive_power_l1_var": int(_read_scaled_from_model_i16(regs, value_index=25, sf_index=28)),
+                "inverter_reactive_power_l2_var": int(_read_scaled_from_model_i16(regs, value_index=26, sf_index=28)),
+                "inverter_reactive_power_l3_var": int(_read_scaled_from_model_i16(regs, value_index=27, sf_index=28)),
+            }
+
+    model_101 = model_index.get(SUNSPEC_MODEL_101_ID)
+    if model_101 is not None:
+        model_start, model_len = model_101
+        regs = _read_register_block(client, model_start, model_len, slave_id)
+        if regs:
+            return {
+                "inverter_current_l1_a": _read_scaled_from_model_u16(regs, value_index=1, sf_index=3),
+                "inverter_voltage_l1_v": _read_scaled_from_model_u16(regs, value_index=2, sf_index=3),
+                "inverter_frequency_hz": _read_scaled_from_model_u16(regs, value_index=3, sf_index=4),
+                "inverter_active_power_w": int(_read_scaled_from_model_i16(regs, value_index=4, sf_index=5)),
+                "inverter_power_l1_w": int(_read_scaled_from_model_i16(regs, value_index=4, sf_index=5)),
+                "inverter_apparent_power_va": int(_read_scaled_from_model_u16(regs, value_index=8, sf_index=9)),
+                "inverter_apparent_power_l1_va": int(_read_scaled_from_model_u16(regs, value_index=8, sf_index=9)),
+                "inverter_reactive_power_var": int(_read_scaled_from_model_i16(regs, value_index=10, sf_index=11)),
+                "inverter_reactive_power_l1_var": int(_read_scaled_from_model_i16(regs, value_index=10, sf_index=11)),
+            }
+
+    return {}
 
 
 def _read_optional_channels(client: ModbusTcpClient, slave_id: int, string_count: int) -> dict[str, float | int]:
@@ -154,17 +290,11 @@ def _read_optional_channels(client: ModbusTcpClient, slave_id: int, string_count
     for idx, v_reg, i_reg, p_reg in LEGACY_CHANNEL_REGISTERS:
         if idx > string_count:
             continue
-        rr = client.read_holding_registers(address=v_reg, count=1, device_id=slave_id)
-        if not rr.isError():
+        rr = client.read_holding_registers(address=v_reg, count=3, device_id=slave_id)
+        if not rr.isError() and len(rr.registers) >= 3:
             out[f"pv{idx}_voltage_v"] = _to_i16(rr.registers[0]) / 10.0
-
-        rr = client.read_holding_registers(address=i_reg, count=1, device_id=slave_id)
-        if not rr.isError():
-            out[f"pv{idx}_current_a"] = _to_i16(rr.registers[0]) / 10.0
-
-        rr = client.read_holding_registers(address=p_reg, count=1, device_id=slave_id)
-        if not rr.isError():
-            out[f"pv{idx}_power_w"] = _to_i16(rr.registers[0])
+            out[f"pv{idx}_current_a"] = _to_i16(rr.registers[1]) / 10.0
+            out[f"pv{idx}_power_w"] = _to_i16(rr.registers[2])
 
     return out
 
@@ -173,14 +303,12 @@ def _read_sunspec_model_160(
     client: ModbusTcpClient,
     slave_id: int,
     string_count: int,
+    model_index: dict[int, tuple[int, int]] | None = None,
 ) -> dict[str, float | int]:
-    model = _find_sunspec_model(
-        client,
-        slave_id,
-        base_register=SUNSPEC_BASE_REGISTER,
-        model_id=SUNSPEC_MODEL_160_ID,
-        max_models=SUNSPEC_MAX_MODELS_TO_SCAN,
-    )
+    if model_index is None:
+        model_index = _scan_sunspec_model_index(client, slave_id)
+
+    model = model_index.get(SUNSPEC_MODEL_160_ID)
     if model is None:
         return {}
 
@@ -224,9 +352,12 @@ def _read_sunspec_model_160(
         dcv_raw = regs[base + 10]
         dcw_raw = regs[base + 11]
 
-        current_a = float(dca_raw * (10**dca_sf))
-        voltage_v = float(dcv_raw * (10**dcv_sf))
-        power_w = int(dcw_raw * (10**dcw_sf))
+        # SunSpec uint16 "not implemented" sentinel — treat as zero rather than
+        # producing a large spurious value after scale factor is applied.
+        _U16_NI = 0xFFFF
+        current_a = float(dca_raw * (10**dca_sf)) if dca_raw != _U16_NI else 0.0
+        voltage_v = float(dcv_raw * (10**dcv_sf)) if dcv_raw != _U16_NI else 0.0
+        power_w = int(dcw_raw * (10**dcw_sf)) if dcw_raw != _U16_NI else 0
 
         channel = index + 1
         out[f"pv{channel}_current_a"] = max(0.0, current_a)
@@ -268,6 +399,38 @@ def _find_sunspec_model(
             header_addr += 2 + mlen
 
     return None
+
+
+def _scan_sunspec_model_index(
+    client: ModbusTcpClient,
+    slave_id: int,
+    *,
+    base_register: int = SUNSPEC_BASE_REGISTER,
+    max_models: int = SUNSPEC_MAX_MODELS_TO_SCAN,
+) -> dict[int, tuple[int, int]]:
+    for candidate_base in (base_register, base_register + 1):
+        sig = _read_register_block(client, candidate_base, 2, slave_id)
+        if len(sig) != 2 or sig[0] != 0x5375 or sig[1] != 0x6E53:
+            continue
+
+        models: dict[int, tuple[int, int]] = {}
+        header_addr = candidate_base + 2
+        for _ in range(max_models):
+            header = _read_register_block(client, header_addr, 2, slave_id)
+            if len(header) != 2:
+                break
+
+            mid = header[0]
+            mlen = header[1]
+            if mid == 0xFFFF or mlen <= 0:
+                break
+
+            models[mid] = (header_addr + 2, mlen)
+            header_addr += 2 + mlen
+
+        return models
+
+    return {}
 
 
 def _read_register_block(client: ModbusTcpClient, address: int, count: int, slave_id: int) -> list[int]:

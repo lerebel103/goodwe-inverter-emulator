@@ -20,6 +20,19 @@ def test_register_map_contains_expanded_meter_fields():
     cfg = GoodweEmulatorConfig()
     snap = Snapshot(
         meter_power_w=900,
+        inverter_active_power_w=450,
+        inverter_reactive_power_var=-120,
+        inverter_apparent_power_va=980,
+        inverter_voltage_l1_v=234.5,
+        inverter_voltage_l2_v=235.1,
+        inverter_voltage_l3_v=236.2,
+        inverter_current_l1_a=1.1,
+        inverter_current_l2_a=1.2,
+        inverter_current_l3_a=1.3,
+        inverter_frequency_hz=49.97,
+        inverter_power_l1_w=140,
+        inverter_power_l2_w=150,
+        inverter_power_l3_w=160,
         meter_power_l1_w=300,
         meter_power_l2_w=300,
         meter_power_l3_w=300,
@@ -55,21 +68,24 @@ def test_register_map_contains_expanded_meter_fields():
     assert regs[36009] == 135
     assert regs[36010] == 970
     assert regs[36014] == 4998
-    assert regs[35121] == 2294
-    assert regs[35122] == 13
-    assert regs[35123] == 4998
+    assert regs[35140] == 450
+    assert regs[35142] == 0xFF88
+    assert regs[35144] == 980
+    assert regs[35121] == 2345
+    assert regs[35122] == 11
+    assert regs[35123] == 4997
     assert regs[35124] == 0
-    assert regs[35125] == 300
-    assert regs[35126] == 2301
-    assert regs[35127] == 14
-    assert regs[35128] == 4998
+    assert regs[35125] == 140
+    assert regs[35126] == 2351
+    assert regs[35127] == 12
+    assert regs[35128] == 4997
     assert regs[35129] == 0
-    assert regs[35130] == 300
-    assert regs[35131] == 2310
-    assert regs[35132] == 15
-    assert regs[35133] == 4998
+    assert regs[35130] == 150
+    assert regs[35131] == 2362
+    assert regs[35132] == 13
+    assert regs[35133] == 4997
     assert regs[35134] == 0
-    assert regs[35135] == 300
+    assert regs[35135] == 160
     assert regs[36025] == 0
     assert regs[36026] == 900
     assert regs[36027] == 0

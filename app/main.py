@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import logging
 import threading
 import time
@@ -41,6 +42,7 @@ class EmulatorRuntime:
         self._em540 = Em540BridgeClient(self._cfg.em540_bridge)
         self._fronius = FroniusClient(self._cfg.fronius)
         self._victron = VictronClient(self._cfg.victron)
+        self._poll_executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="upstream-poll")
 
     def run(self) -> None:
         updater = threading.Thread(target=self._update_loop, daemon=True)
@@ -54,11 +56,17 @@ class EmulatorRuntime:
             time.sleep(interval)
 
     def _refresh_once(self) -> bool:
-        results = (
-            self._poll_source("em540", self._cfg.em540_bridge.enabled, self._em540.read, self._is_valid_em540),
-            self._poll_source("fronius", self._cfg.fronius.enabled, self._fronius.read, self._is_valid_fronius),
-            self._poll_source("victron", self._cfg.victron.enabled, self._victron.read, self._is_valid_victron),
+        poll_specs = (
+            ("em540", self._cfg.em540_bridge.enabled, self._em540.read, self._is_valid_em540),
+            ("fronius", self._cfg.fronius.enabled, self._fronius.read, self._is_valid_fronius),
+            ("victron", self._cfg.victron.enabled, self._victron.read, self._is_valid_victron),
         )
+
+        futures = [
+            self._poll_executor.submit(self._poll_source, name, enabled, reader, validator)
+            for name, enabled, reader, validator in poll_specs
+        ]
+        results = tuple(f.result() for f in futures)
 
         failed = [result.name for result in results if not result.success]
         if failed:

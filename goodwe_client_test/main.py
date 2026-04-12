@@ -44,24 +44,54 @@ def _decode_from_sdk(data: dict[str, object], model_name: str | None) -> dict[st
 
     rtc_raw = ((year_2digit & 0xFF) << 8) | (month & 0xFF)
 
-    l1_current = _pick(data, "igrid1", "iac1", "igrid")
-    l2_current = _pick(data, "igrid2", "iac2")
-    l3_current = _pick(data, "igrid3", "iac3")
-
     l1_voltage = _pick(data, "vgrid1", "vgrid", "vac1")
     l2_voltage = _pick(data, "vgrid2", "vac2")
     l3_voltage = _pick(data, "vgrid3", "vac3")
 
-    l1_power = _pick(data, "pgrid1", "meter_active_power1", "pgrid")
-    l2_power = _pick(data, "pgrid2", "meter_active_power2")
-    l3_power = _pick(data, "pgrid3", "meter_active_power3")
+    l1_current = _pick(data, "igrid1", "iac1", "igrid")
+    l2_current = _pick(data, "igrid2", "iac2")
+    l3_current = _pick(data, "igrid3", "iac3")
+
+    l1_frequency = _pick(data, "fgrid")
+    l2_frequency = _pick(data, "fgrid2")
+    l3_frequency = _pick(data, "fgrid3")
+
+    inv_l1_active = _pick(data, "pgrid1", "pgrid")
+    inv_l2_active = _pick(data, "pgrid2")
+    inv_l3_active = _pick(data, "pgrid3")
+
+    inv_l1_reactive = _pick(data, "reactive_power1")
+    inv_l2_reactive = _pick(data, "reactive_power2")
+    inv_l3_reactive = _pick(data, "reactive_power3")
+    inv_total_reactive = _pick(data, "reactive_power")
+
+    inv_l1_apparent = _pick(data, "apparent_power1")
+    inv_l2_apparent = _pick(data, "apparent_power2")
+    inv_l3_apparent = _pick(data, "apparent_power3")
+    inv_total_apparent = _pick(data, "apparent_power")
+
+    meter_l1_active = _pick(data, "meter_active_power1")
+    meter_l2_active = _pick(data, "meter_active_power2")
+    meter_l3_active = _pick(data, "meter_active_power3")
+
+    l1_reactive = _pick(data, "meter_reactive_power1")
+    l2_reactive = _pick(data, "meter_reactive_power2")
+    l3_reactive = _pick(data, "meter_reactive_power3")
+    total_reactive = _pick(data, "meter_reactive_power_total", "reactive_power_total")
+
+    l1_apparent = _pick(data, "meter_apparent_power1")
+    l2_apparent = _pick(data, "meter_apparent_power2")
+    l3_apparent = _pick(data, "meter_apparent_power3")
+    total_apparent = _pick(data, "meter_apparent_power_total")
 
     return {
-        "model_name": model_name or _pick(data, "model_name", default=""),
-        "rtc": {
-            "year_2digit": year_2digit,
-            "month": month,
-            "raw": rtc_raw,
+        "device": {
+            "model_name": model_name or _pick(data, "model_name", default=""),
+            "rtc": {
+                "year_2digit": year_2digit,
+                "month": month,
+                "raw": rtc_raw,
+            },
         },
         "pv": {
             "pv1_voltage_v": _as_float(_pick(data, "vpv1")),
@@ -72,27 +102,80 @@ def _decode_from_sdk(data: dict[str, object], model_name: str | None) -> dict[st
             "pv2_power_w": _as_int(_pick(data, "ppv2")),
             "pv3_power_w": _as_int(_pick(data, "ppv3")),
             "pv4_power_w": _as_int(_pick(data, "ppv4")),
+            "total_w": _as_int(_pick(data, "ppv", "ppv_total")),
         },
-        "total_inverter_power_w": _as_int(_pick(data, "ppv", "ppv_total")),
-        "battery_voltage_v": _as_float(_pick(data, "vbattery1", "battery_voltage")),
-        "battery_voltage_2_v": _as_float(_pick(data, "vbattery2", default=0.0)),
-        "battery_current_a": _as_float(_pick(data, "ibattery1", "battery_current")),
-        "meter_power_total_w": _as_int(_pick(data, "meter_active_power_total", "active_power", "pgrid")),
-        "meter_powers_w": {
-            "l1": _as_int(l1_power) if l1_power is not None else None,
-            "l2": _as_int(l2_power) if l2_power is not None else None,
-            "l3": _as_int(l3_power) if l3_power is not None else None,
-            "total": _as_int(_pick(data, "meter_active_power_total", "active_power", "pgrid")),
+        "battery": {
+            "voltage_v": _as_float(_pick(data, "vbattery1", "battery_voltage")),
+            "voltage_2_v": _as_float(_pick(data, "vbattery2", default=0.0)),
+            "current_a": _as_float(_pick(data, "ibattery1", "battery_current")),
+            "power_w": _as_int(_pick(data, "pbattery1", "battery_power")),
         },
-        "meter_voltages_v": {
-            "l1": _as_float(l1_voltage) if l1_voltage is not None else None,
-            "l2": _as_float(l2_voltage) if l2_voltage is not None else None,
-            "l3": _as_float(l3_voltage) if l3_voltage is not None else None,
+        "inverter_ac": {
+            "active_power_w": {
+                "l1": _as_int(inv_l1_active) if inv_l1_active is not None else None,
+                "l2": _as_int(inv_l2_active) if inv_l2_active is not None else None,
+                "l3": _as_int(inv_l3_active) if inv_l3_active is not None else None,
+                "total": _as_int(_pick(data, "active_power")),
+            },
+            "reactive_power_var": {
+                "l1": _as_int(inv_l1_reactive) if inv_l1_reactive is not None else None,
+                "l2": _as_int(inv_l2_reactive) if inv_l2_reactive is not None else None,
+                "l3": _as_int(inv_l3_reactive) if inv_l3_reactive is not None else None,
+                "total": _as_int(inv_total_reactive) if inv_total_reactive is not None else None,
+            },
+            "apparent_power_va": {
+                "l1": _as_int(inv_l1_apparent) if inv_l1_apparent is not None else None,
+                "l2": _as_int(inv_l2_apparent) if inv_l2_apparent is not None else None,
+                "l3": _as_int(inv_l3_apparent) if inv_l3_apparent is not None else None,
+                "total": _as_int(inv_total_apparent) if inv_total_apparent is not None else None,
+            },
+            "voltage_v": {
+                "l1": _as_float(l1_voltage) if l1_voltage is not None else None,
+                "l2": _as_float(l2_voltage) if l2_voltage is not None else None,
+                "l3": _as_float(l3_voltage) if l3_voltage is not None else None,
+            },
+            "current_a": {
+                "l1": _as_float(l1_current) if l1_current is not None else None,
+                "l2": _as_float(l2_current) if l2_current is not None else None,
+                "l3": _as_float(l3_current) if l3_current is not None else None,
+            },
+            "frequency_hz": {
+                "l1": _as_float(l1_frequency) if l1_frequency is not None else None,
+                "l2": _as_float(l2_frequency) if l2_frequency is not None else None,
+                "l3": _as_float(l3_frequency) if l3_frequency is not None else None,
+            },
         },
-        "meter_currents_a": {
-            "l1": _as_float(l1_current),
-            "l2": _as_float(l2_current) if l2_current is not None else None,
-            "l3": _as_float(l3_current) if l3_current is not None else None,
+        "meter": {
+            "active_power_w": {
+                "l1": _as_int(meter_l1_active) if meter_l1_active is not None else None,
+                "l2": _as_int(meter_l2_active) if meter_l2_active is not None else None,
+                "l3": _as_int(meter_l3_active) if meter_l3_active is not None else None,
+                "total": _as_int(_pick(data, "meter_active_power_total")),
+            },
+            "reactive_power_var": {
+                "l1": _as_int(_pick(data, "meter_reactive_power1")) if _pick(data, "meter_reactive_power1") is not None else None,
+                "l2": _as_int(_pick(data, "meter_reactive_power2")) if _pick(data, "meter_reactive_power2") is not None else None,
+                "l3": _as_int(_pick(data, "meter_reactive_power3")) if _pick(data, "meter_reactive_power3") is not None else None,
+                "total": _as_int(_pick(data, "meter_reactive_power_total")) if _pick(data, "meter_reactive_power_total") is not None else None,
+            },
+            "apparent_power_va": {
+                "l1": _as_int(_pick(data, "meter_apparent_power1")) if _pick(data, "meter_apparent_power1") is not None else None,
+                "l2": _as_int(_pick(data, "meter_apparent_power2")) if _pick(data, "meter_apparent_power2") is not None else None,
+                "l3": _as_int(_pick(data, "meter_apparent_power3")) if _pick(data, "meter_apparent_power3") is not None else None,
+                "total": _as_int(_pick(data, "meter_apparent_power_total")) if _pick(data, "meter_apparent_power_total") is not None else None,
+            },
+            "energy_kwh": {
+                "export_total": _as_float(_pick(data, "meter_e_total_exp", "meter_total_export_energy", "e_total_exp")),
+                # Per-phase export energy: meter_e_total_exp1/2/3 at 36092/36096/36100 (Energy8, Wh/1000).
+                "export_l1": _as_float(_pick(data, "meter_e_total_exp1")),
+                "export_l2": _as_float(_pick(data, "meter_e_total_exp2")),
+                "export_l3": _as_float(_pick(data, "meter_e_total_exp3")),
+                "import_total": _as_float(_pick(data, "meter_e_total_imp", "meter_total_import_energy", "e_total_imp")),
+                # Per-phase import energy: meter_e_total_imp1/2/3 at 36108/36112/36116 (Energy8, Wh/1000).
+                "import_l1": _as_float(_pick(data, "meter_e_total_imp1")),
+                "import_l2": _as_float(_pick(data, "meter_e_total_imp2")),
+                "import_l3": _as_float(_pick(data, "meter_e_total_imp3")),
+            },
         },
         # Not exposed through the high-level SDK sensor API.
         "unknown_registers": {
@@ -120,6 +203,7 @@ async def poll_once(host: str, port: int, unit_id: int, timeout: float, family: 
         key: runtime_data.get(key)
         for key in (
             "timestamp",
+            # PV
             "vpv1",
             "ipv1",
             "ppv1",
@@ -127,21 +211,51 @@ async def poll_once(host: str, port: int, unit_id: int, timeout: float, family: 
             "ipv2",
             "ppv2",
             "ppv",
+            # Battery
             "vbattery1",
             "ibattery1",
             "pbattery1",
+            # Meter active power
             "pgrid",
             "pgrid1",
             "pgrid2",
             "pgrid3",
             "active_power",
+            "meter_active_power1",
+            "meter_active_power2",
+            "meter_active_power3",
+            "meter_active_power_total",
+            # Meter reactive power (SDK keys from et.py: Reactive/Reactive4 sensors)
+            "reactive_power",
+            "reactive_power_total",
+            "reactive_power1",
+            "reactive_power2",
+            "reactive_power3",
+            "meter_reactive_power1",
+            "meter_reactive_power2",
+            "meter_reactive_power3",
+            "meter_reactive_power_total",
+            # Meter apparent power (SDK keys from et.py: Apparent/Apparent4 sensors)
+            "apparent_power",
+            "apparent_power1",
+            "apparent_power2",
+            "apparent_power3",
+            "meter_apparent_power1",
+            "meter_apparent_power2",
+            "meter_apparent_power3",
+            "meter_apparent_power_total",
+            # Meter voltage
             "vgrid",
             "vgrid1",
             "vgrid2",
             "vgrid3",
+            "fgrid",
+            "fgrid2",
+            "fgrid3",
             "vac1",
             "vac2",
             "vac3",
+            # Meter current
             "igrid",
             "igrid1",
             "igrid2",
@@ -149,10 +263,17 @@ async def poll_once(host: str, port: int, unit_id: int, timeout: float, family: 
             "iac1",
             "iac2",
             "iac3",
-            "meter_active_power1",
-            "meter_active_power2",
-            "meter_active_power3",
-            "meter_active_power_total",
+            # Meter energy totals (Energy8 at 36104/36120 overwrite f32 at 36015/36017 in SDK dict)
+            "meter_e_total_exp",
+            "meter_e_total_imp",
+            # Meter energy per-phase export (Energy8 at 36092/36096/36100)
+            "meter_e_total_exp1",
+            "meter_e_total_exp2",
+            "meter_e_total_exp3",
+            # Meter energy per-phase import (Energy8 at 36108/36112/36116)
+            "meter_e_total_imp1",
+            "meter_e_total_imp2",
+            "meter_e_total_imp3",
         )
         if key in runtime_data
     }

@@ -49,8 +49,9 @@ class _FakeClient:
         return True
 
     def read_holding_registers(self, address: int, count: int, device_id: int):
-        if count != 1:
-            return _ErrResult()
+        if count > 1:
+            regs = [self._map.get(address + i, 0) for i in range(count)]
+            return _OkMultiResult(regs)
         if address in self._map:
             return _OkResult(self._map[address])
         return _ErrResult()
@@ -153,6 +154,84 @@ class _OkMultiResult:
         return False
 
 
+class _FakeModel103Client:
+    def __init__(self, host: str, port: int, timeout: float, **kwargs):
+        self.host = host
+        self.port = port
+        self.timeout = timeout
+        self._map: dict[int, int] = {
+            # SunSpec signature
+            40000: 0x5375,
+            40001: 0x6E53,
+            # Inverter model 103 header (three phase)
+            40002: 103,
+            40003: 50,
+            # Current (AphA/B/C) with A_SF=-1
+            40005: 123,
+            40006: 98,
+            40007: 105,
+            40008: (-1) & 0xFFFF,
+            # Voltage (PhVphA/B/C) with V_SF=-1
+            40009: 2401,
+            40010: 2398,
+            40011: 2403,
+            40012: (-1) & 0xFFFF,
+            # Frequency with Hz_SF=-2
+            40013: 5000,
+            40014: (-2) & 0xFFFF,
+            # W / W_SF -> 1234 W
+            40016: 1234,
+            40017: 400,
+            40018: 420,
+            40019: 414,
+            40020: 0,
+            # VA / VA_SF -> 1310 VA
+            40023: 1310,
+            40024: 430,
+            40025: 440,
+            40026: 440,
+            40027: 0,
+            # VAr / VAr_SF -> -220 var
+            40028: (-220) & 0xFFFF,
+            40029: (-70) & 0xFFFF,
+            40030: (-80) & 0xFFFF,
+            40031: (-70) & 0xFFFF,
+            40032: 0,
+            # End marker
+            40054: 0xFFFF,
+            40055: 0,
+        }
+
+    def connect(self) -> bool:
+        return True
+
+    def read_holding_registers(self, address: int, count: int, device_id: int):
+        regs = []
+        for i in range(count):
+            regs.append(self._map.get(address + i, 0))
+        return _OkMultiResult(regs)
+
+    def close(self) -> None:
+        return None
+
+
+class _FakeModel103NotImplementedClient(_FakeModel103Client):
+    def __init__(self, host: str, port: int, timeout: float, **kwargs):
+        super().__init__(host, port, timeout, **kwargs)
+        # uint16 "not implemented" for A/V/Hz/VA paths
+        self._map[40005] = 0xFFFF
+        self._map[40006] = 0xFFFF
+        self._map[40007] = 0xFFFF
+        self._map[40009] = 0xFFFF
+        self._map[40010] = 0xFFFF
+        self._map[40011] = 0xFFFF
+        self._map[40013] = 0xFFFF
+        self._map[40023] = 0xFFFF
+        self._map[40024] = 0xFFFF
+        self._map[40025] = 0xFFFF
+        self._map[40026] = 0xFFFF
+
+
 def test_fronius_client_returns_channel_data_from_optional_registers(monkeypatch):
     monkeypatch.setattr(
         fronius_module,
@@ -234,3 +313,57 @@ def test_fronius_client_limits_sunspec_model_160_to_two_strings(monkeypatch):
     assert data["pv3_power_w"] == 0
     assert data["pv4_power_w"] == 0
     assert data["pv_power_w"] == 2100
+
+
+def test_fronius_client_reads_inverter_ac_power_from_sunspec_model_103(monkeypatch):
+    monkeypatch.setattr(
+        fronius_module,
+        "ModbusTcpClient",
+        lambda host, port, timeout, **kwargs: _FakeModel103Client(host, port, timeout, **kwargs),
+    )
+
+    cfg = FroniusConfig(host="127.0.0.1", port=502, slave_id=1, sunspec_model_160_enabled=False)
+    data = FroniusClient(cfg).read()
+
+    assert data["inverter_active_power_w"] == 1234
+    assert data["inverter_power_l1_w"] == 400
+    assert data["inverter_power_l2_w"] == 420
+    assert data["inverter_power_l3_w"] == 414
+    assert data["inverter_apparent_power_va"] == 1310
+    assert data["inverter_apparent_power_l1_va"] == 430
+    assert data["inverter_apparent_power_l2_va"] == 440
+    assert data["inverter_apparent_power_l3_va"] == 440
+    assert data["inverter_reactive_power_var"] == -220
+    assert data["inverter_reactive_power_l1_var"] == -70
+    assert data["inverter_reactive_power_l2_var"] == -80
+    assert data["inverter_reactive_power_l3_var"] == -70
+    assert data["inverter_voltage_l1_v"] == pytest.approx(240.1)
+    assert data["inverter_voltage_l2_v"] == pytest.approx(239.8)
+    assert data["inverter_voltage_l3_v"] == pytest.approx(240.3)
+    assert data["inverter_current_l1_a"] == pytest.approx(12.3)
+    assert data["inverter_current_l2_a"] == pytest.approx(9.8)
+    assert data["inverter_current_l3_a"] == pytest.approx(10.5)
+    assert data["inverter_frequency_hz"] == pytest.approx(50.0)
+
+
+def test_fronius_client_handles_not_implemented_sentinels_for_model_103_scalars(monkeypatch):
+    monkeypatch.setattr(
+        fronius_module,
+        "ModbusTcpClient",
+        lambda host, port, timeout, **kwargs: _FakeModel103NotImplementedClient(host, port, timeout, **kwargs),
+    )
+
+    cfg = FroniusConfig(host="127.0.0.1", port=502, slave_id=1, sunspec_model_160_enabled=False)
+    data = FroniusClient(cfg).read()
+
+    assert data["inverter_current_l1_a"] == 0.0
+    assert data["inverter_current_l2_a"] == 0.0
+    assert data["inverter_current_l3_a"] == 0.0
+    assert data["inverter_voltage_l1_v"] == 0.0
+    assert data["inverter_voltage_l2_v"] == 0.0
+    assert data["inverter_voltage_l3_v"] == 0.0
+    assert data["inverter_frequency_hz"] == 0.0
+    assert data["inverter_apparent_power_va"] == 0
+    assert data["inverter_apparent_power_l1_va"] == 0
+    assert data["inverter_apparent_power_l2_va"] == 0
+    assert data["inverter_apparent_power_l3_va"] == 0
