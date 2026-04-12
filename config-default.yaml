@@ -29,8 +29,8 @@ goodwe_emulator:
   rtu_port: 8899
   socket_port: 8898
   comm_addr: 254
-  update_interval: 2.0
-  data_timeout: 10.0
+  update_interval: 1.0
+  data_timeout: 5.0
   log_level: INFO
   serial_number: ETEMU00000001
   model_name: GW10K-ET

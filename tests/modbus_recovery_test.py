@@ -68,6 +68,7 @@ class _FroniusRecoveryClient:
         }
 
     def connect(self) -> bool:
+        self.connected = True
         return True
 
     def read_holding_registers(self, address: int, count: int, device_id: int):
@@ -95,6 +96,7 @@ class _VictronRecoveryClient:
         self._instance_number = type(self).created
 
     def connect(self) -> bool:
+        self.connected = True
         return True
 
     def read_holding_registers(self, address: int, count: int, device_id: int):
@@ -124,7 +126,7 @@ def test_em540_retries_connect_and_recovers(monkeypatch):
 
     assert data != {}
     assert _Em540RecoveryClient.connect_calls == 2
-    assert _Em540RecoveryClient.close_calls == 2
+    assert _Em540RecoveryClient.close_calls == 1
 
 
 def test_fronius_reconnects_after_transient_exception(monkeypatch):
@@ -142,7 +144,7 @@ def test_fronius_reconnects_after_transient_exception(monkeypatch):
 
     assert data["pv_power_w"] == 50
     assert _FroniusRecoveryClient.created == 2
-    assert _FroniusRecoveryClient.close_calls == 2
+    assert _FroniusRecoveryClient.close_calls == 1
 
 
 def test_victron_retries_after_read_error_and_recovers(monkeypatch):
@@ -161,4 +163,27 @@ def test_victron_retries_after_read_error_and_recovers(monkeypatch):
     assert data["battery_voltage_v"] == 52.4
     assert data["battery_soc_pct"] == 64
     assert _VictronRecoveryClient.created == 2
-    assert _VictronRecoveryClient.close_calls == 2
+    assert _VictronRecoveryClient.close_calls == 1
+
+
+def test_fronius_reuses_persistent_connection_after_success(monkeypatch):
+    _FroniusRecoveryClient.created = 0
+    _FroniusRecoveryClient.close_calls = 0
+
+    monkeypatch.setattr(
+        fronius_module,
+        "ModbusTcpClient",
+        lambda host, port, timeout, **kwargs: _FroniusRecoveryClient(host, port, timeout, **kwargs),
+    )
+
+    cfg = FroniusConfig(host="127.0.0.1", port=502, timeout=0.2)
+    client = FroniusClient(cfg)
+
+    # First read reconnects after injected transient error and succeeds.
+    data1 = client.read()
+    # Second read should reuse the healthy persistent connection.
+    data2 = client.read()
+
+    assert data1["pv_power_w"] == 50
+    assert data2["pv_power_w"] == 50
+    assert _FroniusRecoveryClient.created == 2

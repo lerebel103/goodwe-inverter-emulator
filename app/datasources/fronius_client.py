@@ -6,7 +6,7 @@ from pymodbus import FramerType
 from pymodbus.client import ModbusTcpClient
 
 from app.config import FroniusConfig
-from app.datasources.modbus_resilience import ModbusClientCircuitBreaker, read_modbus_payload_with_recovery
+from app.datasources.modbus_resilience import ModbusClientCircuitBreaker, PersistentModbusSession
 
 logger = logging.getLogger(__name__)
 
@@ -43,18 +43,18 @@ class FroniusClient:
             cooldown_seconds=max(2.0, float(cfg.timeout) * 3.0),
         )
         self._model_index_cache: dict[int, tuple[int, int]] | None = None
+        self._session = PersistentModbusSession(
+            source_name="Fronius",
+            create_client=self._build_client,
+            breaker=self._breaker,
+            retries=1,
+        )
 
     def read(self) -> dict[str, int]:
         if not self._cfg.enabled:
             return {}
 
-        return read_modbus_payload_with_recovery(
-            source_name="Fronius",
-            create_client=self._build_client,
-            read_once=self._read_once,
-            breaker=self._breaker,
-            retries=1,
-        )
+        return self._session.read(self._read_once)
 
     def _build_client(self) -> ModbusTcpClient:
         return ModbusTcpClient(

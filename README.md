@@ -74,7 +74,7 @@ Credit: the standalone validation client in this repository is built on top of t
 ### Observed Startup Behavior (Fresh Restart)
 
 - On restart, the downstream circuit breaker starts open until fresh upstream data is available.
-- The downstream stale-data timeout is 10 seconds by default (`goodwe_emulator.data_timeout`) to provide headroom while still failing safe quickly.
+- The downstream stale-data timeout is 5 seconds by default (`goodwe_emulator.data_timeout`) to provide headroom while still failing safe quickly.
 - While open, the charger requests are rejected with Modbus exception responses (`fc=131` in logs, which is exception response for read-holding-registers).
 - After upstream data arrives, the breaker closes and normal `fc=3` register responses resume.
 

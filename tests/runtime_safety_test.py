@@ -185,6 +185,6 @@ def test_modbus_server_opens_circuit_after_data_age_exceeds_five_seconds(monkeyp
     assert result == ExcCodes.DEVICE_BUSY
 
 
-def test_default_goodwe_data_timeout_is_ten_seconds():
+def test_default_goodwe_data_timeout_is_five_seconds():
     cfg = AppConfig()
-    assert cfg.goodwe_emulator.data_timeout == pytest.approx(10.0)
+    assert cfg.goodwe_emulator.data_timeout == pytest.approx(5.0)
