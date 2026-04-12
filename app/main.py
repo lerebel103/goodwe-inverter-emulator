@@ -33,7 +33,8 @@ class EmulatorRuntime:
         self._snapshot = Snapshot()
         self._server = GoodweModbusServer(
             bind_host=self._cfg.goodwe_emulator.bind_host,
-            bind_port=self._cfg.goodwe_emulator.bind_port,
+            rtu_port=self._cfg.goodwe_emulator.rtu_port,
+            socket_port=self._cfg.goodwe_emulator.socket_port,
             comm_addr=self._cfg.goodwe_emulator.comm_addr,
             data_timeout=self._cfg.goodwe_emulator.data_timeout,
         )

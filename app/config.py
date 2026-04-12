@@ -46,7 +46,8 @@ class VictronConfig:
 @dataclass
 class GoodweEmulatorConfig:
     bind_host: str = "0.0.0.0"
-    bind_port: int = 8899
+    rtu_port: int = 8899
+    socket_port: int = 8898
     comm_addr: int = 254
     update_interval: float = 1.0
     data_timeout: float = 5.0
@@ -116,9 +117,18 @@ class ConfigManager:
 
     @staticmethod
     def _validate(cfg: AppConfig) -> None:
-        for port in [cfg.em540_bridge.port, cfg.fronius.port, cfg.victron.port, cfg.goodwe_emulator.bind_port]:
+        for port in [
+            cfg.em540_bridge.port,
+            cfg.fronius.port,
+            cfg.victron.port,
+            cfg.goodwe_emulator.rtu_port,
+            cfg.goodwe_emulator.socket_port,
+        ]:
             if not (0 < int(port) < 65535):
                 raise ConfigError(f"Invalid port value: {port}")
+
+        if int(cfg.goodwe_emulator.rtu_port) == int(cfg.goodwe_emulator.socket_port):
+            raise ConfigError("goodwe_emulator.rtu_port and goodwe_emulator.socket_port must differ")
 
         if float(cfg.goodwe_emulator.update_interval) <= 0:
             raise ConfigError(f"Invalid goodwe_emulator.update_interval: {cfg.goodwe_emulator.update_interval}")

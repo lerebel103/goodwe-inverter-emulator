@@ -4,8 +4,8 @@ import pytest
 from pymodbus.constants import ExcCodes
 
 from app.config import AppConfig
-from app.main import EmulatorRuntime
 from app.goodwe.server import GoodweModbusServer
+from app.main import EmulatorRuntime
 
 
 class _FakeServer:
@@ -145,7 +145,7 @@ def test_runtime_opens_circuit_and_stops_publishing_after_later_failure():
 
 
 def test_modbus_server_returns_device_busy_while_circuit_open():
-    server = GoodweModbusServer("127.0.0.1", 0, 247, data_timeout=5.0)
+    server = GoodweModbusServer("127.0.0.1", 60001, 60002, 247, data_timeout=5.0)
     result = server._store.getValues(3, 36052, count=3)
     assert result == ExcCodes.DEVICE_BUSY
 
@@ -156,7 +156,7 @@ def test_modbus_server_returns_device_busy_while_circuit_open():
 
 
 def test_modbus_server_keeps_circuit_closed_when_data_age_is_under_five_seconds(monkeypatch):
-    server = GoodweModbusServer("127.0.0.1", 0, 247, data_timeout=5.0)
+    server = GoodweModbusServer("127.0.0.1", 60001, 60002, 247, data_timeout=5.0)
     server.mark_data_received()
     server.update_holding_registers({36052: 2294})
 
@@ -171,7 +171,7 @@ def test_modbus_server_keeps_circuit_closed_when_data_age_is_under_five_seconds(
 
 
 def test_modbus_server_opens_circuit_after_data_age_exceeds_five_seconds(monkeypatch):
-    server = GoodweModbusServer("127.0.0.1", 0, 247, data_timeout=5.0)
+    server = GoodweModbusServer("127.0.0.1", 60001, 60002, 247, data_timeout=5.0)
     server.mark_data_received()
     server.update_holding_registers({36052: 2294})
 

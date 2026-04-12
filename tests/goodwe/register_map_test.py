@@ -55,6 +55,21 @@ def test_register_map_contains_expanded_meter_fields():
     assert regs[36009] == 135
     assert regs[36010] == 970
     assert regs[36014] == 4998
+    assert regs[35121] == 2294
+    assert regs[35122] == 13
+    assert regs[35123] == 4998
+    assert regs[35124] == 0
+    assert regs[35125] == 300
+    assert regs[35126] == 2301
+    assert regs[35127] == 14
+    assert regs[35128] == 4998
+    assert regs[35129] == 0
+    assert regs[35130] == 300
+    assert regs[35131] == 2310
+    assert regs[35132] == 15
+    assert regs[35133] == 4998
+    assert regs[35134] == 0
+    assert regs[35135] == 300
     assert regs[36025] == 0
     assert regs[36026] == 900
     assert regs[36027] == 0

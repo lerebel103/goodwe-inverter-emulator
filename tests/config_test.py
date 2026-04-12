@@ -31,7 +31,8 @@ victron:
   log_level: INFO
 goodwe_emulator:
   bind_host: 0.0.0.0
-  bind_port: 8899
+  rtu_port: 8899
+  socket_port: 8898
   comm_addr: 254
   update_interval: 1.0
   data_timeout: 5.0
@@ -49,7 +50,8 @@ def test_load_valid_config():
         p = Path(tmp) / "config.yaml"
         p.write_text(VALID_CONFIG)
         cfg = load_config(str(p))
-        assert cfg.goodwe_emulator.bind_port == 8899
+        assert cfg.goodwe_emulator.rtu_port == 8899
+        assert cfg.goodwe_emulator.socket_port == 8898
 
 
 def test_missing_required_section_raises_error():
@@ -72,12 +74,22 @@ def test_missing_required_section_raises_error():
 
 
 def test_invalid_port_raises_error():
-    bad = VALID_CONFIG.replace("bind_port: 8899", "bind_port: 70000")
+    bad = VALID_CONFIG.replace("rtu_port: 8899", "rtu_port: 70000")
     with tempfile.TemporaryDirectory() as tmp:
         p = Path(tmp) / "config.yaml"
         p.write_text(bad)
         with pytest.raises(ConfigError, match="Invalid port"):
             load_config(str(p))
+
+
+def test_equal_rtu_and_socket_ports_raise_error():
+    bad = VALID_CONFIG.replace("socket_port: 8898", "socket_port: 8899")
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp) / "config.yaml"
+        p.write_text(bad)
+        with pytest.raises(ConfigError, match="must differ"):
+            load_config(str(p))
+
 
 def test_invalid_data_timeout_raises_error():
     bad = VALID_CONFIG.replace("data_timeout: 5.0", "data_timeout: 0")

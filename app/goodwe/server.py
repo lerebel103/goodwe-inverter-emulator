@@ -84,9 +84,10 @@ class _CircuitBreaker:
 
 
 class GoodweModbusServer:
-    def __init__(self, bind_host: str, bind_port: int, comm_addr: int, data_timeout: float):
+    def __init__(self, bind_host: str, rtu_port: int, socket_port: int, comm_addr: int, data_timeout: float):
         self._bind_host = bind_host
-        self._bind_port = bind_port
+        self._rtu_port = rtu_port
+        self._socket_port = socket_port
         self._comm_addr = comm_addr
         self._lock = threading.Lock()
         self._breaker = _CircuitBreaker(data_timeout)
@@ -133,20 +134,33 @@ class GoodweModbusServer:
                 if 0 <= addr < 50000:
                     self._store.setValues(3, addr, [int(value) & 0xFFFF])
 
-    def serve_forever(self) -> None:
+    def _serve(self, framer: FramerType, port: int, label: str) -> None:
         logger.info(
-            "Starting GoodWe ET emulator Modbus/TCP server on %s:%s (RTU framer)",
+            "Starting GoodWe ET emulator Modbus/TCP server on %s:%s (%s framer)",
             self._bind_host,
-            self._bind_port,
+            port,
+            label,
         )
         StartTcpServer(
             context=self._context,
-            address=(self._bind_host, self._bind_port),
-            framer=FramerType.RTU,
+            address=(self._bind_host, port),
+            framer=framer,
             ignore_missing_devices=False,
             trace_connect=self._trace_connect,
             trace_pdu=self._trace_pdu,
         )
+
+    def serve_forever(self) -> None:
+        rtu_thread = threading.Thread(
+            target=self._serve,
+            args=(FramerType.RTU, self._rtu_port, "RTU"),
+            name="goodwe-modbus-rtu",
+            daemon=True,
+        )
+        rtu_thread.start()
+
+        # Keep socket-framed listener on the main thread.
+        self._serve(FramerType.SOCKET, self._socket_port, "SOCKET")
 
 
 class _BreakerDataBlock(ModbusSequentialDataBlock):
