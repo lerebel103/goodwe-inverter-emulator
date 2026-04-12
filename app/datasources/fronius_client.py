@@ -42,6 +42,7 @@ class FroniusClient:
             failure_threshold=2,
             cooldown_seconds=max(2.0, float(cfg.timeout) * 3.0),
         )
+        self._model_index_cache: dict[int, tuple[int, int]] | None = None
 
     def read(self) -> dict[str, int]:
         if not self._cfg.enabled:
@@ -65,16 +66,29 @@ class FroniusClient:
 
     def _read_once(self, client: ModbusTcpClient) -> dict[str, int]:
         string_count = _effective_string_count(self._cfg)
-        model_index = _scan_sunspec_model_index(client, self._cfg.slave_id)
+        model_index = self._get_model_index(client)
         inverter_ac = _read_sunspec_inverter_ac_power(client, self._cfg.slave_id, model_index)
 
+        model_data: dict[str, float | int] = {}
         if self._cfg.sunspec_model_160_enabled:
             model_data = _read_sunspec_model_160(client, self._cfg.slave_id, string_count, model_index)
-            if model_data:
-                return {
-                    **model_data,
-                    **inverter_ac,
-                }
+
+        # If cached SunSpec model offsets become invalid (firmware restart/map shift),
+        # force one rescan and retry once before falling back to legacy reads.
+        if self._model_index_cache and not inverter_ac and not model_data:
+            refreshed = _scan_sunspec_model_index(client, self._cfg.slave_id)
+            if refreshed:
+                self._model_index_cache = refreshed
+                model_index = refreshed
+                inverter_ac = _read_sunspec_inverter_ac_power(client, self._cfg.slave_id, model_index)
+                if self._cfg.sunspec_model_160_enabled:
+                    model_data = _read_sunspec_model_160(client, self._cfg.slave_id, string_count, model_index)
+
+        if model_data:
+            return {
+                **model_data,
+                **inverter_ac,
+            }
 
         legacy_block = _read_register_block(client, LEGACY_PV_POWER_REGISTER, 19, self._cfg.slave_id)
         if len(legacy_block) == 19:
@@ -150,6 +164,13 @@ class FroniusClient:
             **pv,
             **inverter_ac,
         }
+
+    def _get_model_index(self, client: ModbusTcpClient) -> dict[int, tuple[int, int]]:
+        if self._model_index_cache is not None:
+            return self._model_index_cache
+
+        self._model_index_cache = _scan_sunspec_model_index(client, self._cfg.slave_id)
+        return self._model_index_cache
 
 
 def _to_i16(value: int) -> int:

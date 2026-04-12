@@ -49,8 +49,8 @@ class GoodweEmulatorConfig:
     rtu_port: int = 8899
     socket_port: int = 8898
     comm_addr: int = 254
-    update_interval: float = 1.0
-    data_timeout: float = 5.0
+    update_interval: float = 2.0
+    data_timeout: float = 10.0
     log_level: str = "INFO"
     serial_number: str = "ETEMU00000001"
     model_name: str = "GW10K-ET"

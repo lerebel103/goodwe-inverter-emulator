@@ -34,8 +34,8 @@ goodwe_emulator:
   rtu_port: 8899
   socket_port: 8898
   comm_addr: 254
-  update_interval: 1.0
-  data_timeout: 5.0
+  update_interval: 2.0
+  data_timeout: 10.0
   log_level: INFO
   serial_number: ETEMU00000001
   model_name: GW10K-ET
@@ -92,7 +92,7 @@ def test_equal_rtu_and_socket_ports_raise_error():
 
 
 def test_invalid_data_timeout_raises_error():
-    bad = VALID_CONFIG.replace("data_timeout: 5.0", "data_timeout: 0")
+    bad = VALID_CONFIG.replace("data_timeout: 10.0", "data_timeout: 0")
     with tempfile.TemporaryDirectory() as tmp:
         p = Path(tmp) / "config.yaml"
         p.write_text(bad)
