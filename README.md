@@ -10,6 +10,8 @@ The project is Modbus-only for runtime integrations and emulation.
 
 It serves a GoodWe-like Modbus/TCP endpoint so tools such as the Python `goodwe` ET client can connect and read expected ET register ranges.
 
+Validation support in this repository also uses the open-source GoodWe Python SDK from `marcelblijleven/goodwe`: https://github.com/marcelblijleven/goodwe
+
 ## Functional Goals
 
 - Emulate a GoodWe ET-series Modbus/TCP inverter interface so a GoodWe HCA G2 22kW EV charger can operate with full inverter-driven functionality even when no physical GoodWe inverter is present.
@@ -66,6 +68,8 @@ This is intentionally extensible so you can complete strict one-to-one mapping f
 ## GoodWe HCA G2 22kW Charger Validation
 
 This emulator was tested against a GoodWe HCA G2 22kW EV charger that polls the inverter over Modbus/TCP using function code 3.
+
+Credit: the standalone validation client in this repository is built on top of the open-source GoodWe Python SDK maintained at `marcelblijleven/goodwe`.
 
 ### Observed Startup Behavior (Fresh Restart)
 
