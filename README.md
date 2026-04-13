@@ -8,7 +8,7 @@ Although it was developed for this EV charger use case, it may also work with ot
 
 It aggregates data from:
 
-- EM540 bridge (meter data over Modbus/TCP)
+- EM540 bridge from https://github.com/lerebel103/carlo-gavazzi-em540-bridge (meter data over Modbus/TCP; this emulator was developed to work directly with this bridge)
 - Fronius Symo (PV data over Modbus/TCP)
 - Victron GX (battery data over Modbus/TCP)
 
@@ -16,11 +16,6 @@ The EM540 in this integration refers to the Carlo Gavazzi EM540 energy meter, se
 
 Validation support in this repository also uses the open-source GoodWe Python SDK from `marcelblijleven/goodwe`: https://github.com/marcelblijleven/goodwe
 
-This emulator was developed to work directly with the EM540 bridge from:
-
-- https://github.com/lerebel103/carlo-gavazzi-em540-bridge
-
-It expects EM540 meter telemetry from that bridge project and maps it into a GoodWe ET-compatible Modbus register image.
 
 ## Features
 
