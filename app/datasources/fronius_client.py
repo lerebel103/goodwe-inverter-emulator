@@ -55,7 +55,7 @@ class FroniusClient:
             source_name="Fronius",
             create_client=self._build_client,
             breaker=self._breaker,
-            retries=1,
+            retries=0,
         )
 
     def read(self) -> dict[str, int]:
@@ -69,6 +69,7 @@ class FroniusClient:
             self._cfg.host,
             port=self._cfg.port,
             timeout=self._cfg.timeout,
+            retries=self._cfg.retry_count,
             framer=FramerType.SOCKET,
         )
 

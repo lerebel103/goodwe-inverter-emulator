@@ -4,6 +4,7 @@ em540_bridge:
   port: 5001
   slave_id: 1
   timeout: 1.0
+  retry_count: 1
   log_level: INFO
 
 fronius:
@@ -13,7 +14,8 @@ fronius:
   slave_id: 1
   pv_string_count: 2
   sunspec_model_160_enabled: true
-  timeout: 2.0
+  timeout: 1.0
+  retry_count: 1
   log_level: INFO
 
 victron:
@@ -22,6 +24,7 @@ victron:
   port: 502
   slave_id: 100
   timeout: 1.0
+  retry_count: 1
   log_level: INFO
   battery_scale: 1.0
   battery_voltage_min_v: 0.0

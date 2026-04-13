@@ -28,11 +28,13 @@ class _Em540RecoveryClient:
     connect_outcomes = [False, True]
     connect_calls = 0
     close_calls = 0
+    last_retries = None
 
     def __init__(self, host: str, port: int, timeout: float, **kwargs):
         self.host = host
         self.port = port
         self.timeout = timeout
+        type(self).last_retries = kwargs.get("retries")
 
     def connect(self) -> bool:
         type(self).connect_calls += 1
@@ -49,11 +51,13 @@ class _Em540RecoveryClient:
 class _FroniusRecoveryClient:
     created = 0
     close_calls = 0
+    last_retries = None
 
     def __init__(self, host: str, port: int, timeout: float, **kwargs):
         self.host = host
         self.port = port
         self.timeout = timeout
+        type(self).last_retries = kwargs.get("retries")
         type(self).created += 1
         self._instance_number = type(self).created
         self._map = {
@@ -87,11 +91,13 @@ class _FroniusRecoveryClient:
 class _VictronRecoveryClient:
     created = 0
     close_calls = 0
+    last_retries = None
 
     def __init__(self, host: str, port: int, timeout: float, **kwargs):
         self.host = host
         self.port = port
         self.timeout = timeout
+        type(self).last_retries = kwargs.get("retries")
         type(self).created += 1
         self._instance_number = type(self).created
 
@@ -110,7 +116,7 @@ class _VictronRecoveryClient:
         type(self).close_calls += 1
 
 
-def test_em540_retries_connect_and_recovers(monkeypatch):
+def test_em540_recovers_on_next_read_after_connect_failure(monkeypatch):
     _Em540RecoveryClient.connect_outcomes = [False, True]
     _Em540RecoveryClient.connect_calls = 0
     _Em540RecoveryClient.close_calls = 0
@@ -121,15 +127,19 @@ def test_em540_retries_connect_and_recovers(monkeypatch):
         lambda host, port, timeout, **kwargs: _Em540RecoveryClient(host, port, timeout, **kwargs),
     )
 
-    cfg = Em540BridgeConfig(host="127.0.0.1", port=502, timeout=0.2)
-    data = Em540BridgeClient(cfg).read()
+    cfg = Em540BridgeConfig(host="127.0.0.1", port=502, timeout=0.2, retry_count=4)
+    client = Em540BridgeClient(cfg)
+
+    assert client.read() == {}
+    data = client.read()
 
     assert data != {}
     assert _Em540RecoveryClient.connect_calls == 2
     assert _Em540RecoveryClient.close_calls == 1
+    assert _Em540RecoveryClient.last_retries == 4
 
 
-def test_fronius_reconnects_after_transient_exception(monkeypatch):
+def test_fronius_recovers_on_next_read_after_transient_exception(monkeypatch):
     _FroniusRecoveryClient.created = 0
     _FroniusRecoveryClient.close_calls = 0
 
@@ -139,15 +149,19 @@ def test_fronius_reconnects_after_transient_exception(monkeypatch):
         lambda host, port, timeout, **kwargs: _FroniusRecoveryClient(host, port, timeout, **kwargs),
     )
 
-    cfg = FroniusConfig(host="127.0.0.1", port=502, timeout=0.2)
-    data = FroniusClient(cfg).read()
+    cfg = FroniusConfig(host="127.0.0.1", port=502, timeout=0.2, retry_count=5)
+    client = FroniusClient(cfg)
+
+    assert client.read() == {}
+    data = client.read()
 
     assert data["pv_power_w"] == 50
     assert _FroniusRecoveryClient.created == 2
     assert _FroniusRecoveryClient.close_calls == 1
+    assert _FroniusRecoveryClient.last_retries == 5
 
 
-def test_victron_retries_after_read_error_and_recovers(monkeypatch):
+def test_victron_recovers_on_next_read_after_read_error(monkeypatch):
     _VictronRecoveryClient.created = 0
     _VictronRecoveryClient.close_calls = 0
 
@@ -157,13 +171,17 @@ def test_victron_retries_after_read_error_and_recovers(monkeypatch):
         lambda host, port, timeout, **kwargs: _VictronRecoveryClient(host, port, timeout, **kwargs),
     )
 
-    cfg = VictronConfig(host="127.0.0.1", port=502, slave_id=100, timeout=0.2)
-    data = VictronClient(cfg).read()
+    cfg = VictronConfig(host="127.0.0.1", port=502, slave_id=100, timeout=0.2, retry_count=6)
+    client = VictronClient(cfg)
+
+    assert client.read() == {}
+    data = client.read()
 
     assert data["battery_voltage_v"] == 52.4
     assert data["battery_soc_pct"] == 64
     assert _VictronRecoveryClient.created == 2
     assert _VictronRecoveryClient.close_calls == 1
+    assert _VictronRecoveryClient.last_retries == 6
 
 
 def test_fronius_reuses_persistent_connection_after_success(monkeypatch):
@@ -176,14 +194,16 @@ def test_fronius_reuses_persistent_connection_after_success(monkeypatch):
         lambda host, port, timeout, **kwargs: _FroniusRecoveryClient(host, port, timeout, **kwargs),
     )
 
-    cfg = FroniusConfig(host="127.0.0.1", port=502, timeout=0.2)
+    cfg = FroniusConfig(host="127.0.0.1", port=502, timeout=0.2, retry_count=2)
     client = FroniusClient(cfg)
 
-    # First read reconnects after injected transient error and succeeds.
+    # First read fails without wrapper retry, second read reconnects and succeeds.
+    data0 = client.read()
     data1 = client.read()
-    # Second read should reuse the healthy persistent connection.
+    # Third read should reuse the healthy persistent connection.
     data2 = client.read()
 
+    assert data0 == {}
     assert data1["pv_power_w"] == 50
     assert data2["pv_power_w"] == 50
     assert _FroniusRecoveryClient.created == 2

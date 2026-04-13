@@ -57,7 +57,7 @@ class VictronClient:
             source_name="Victron",
             create_client=self._build_client,
             breaker=self._breaker,
-            retries=1,
+            retries=0,
         )
 
     def read(self) -> dict[str, float | int]:
@@ -71,6 +71,7 @@ class VictronClient:
             self._cfg.host,
             port=self._cfg.port,
             timeout=self._cfg.timeout,
+            retries=self._cfg.retry_count,
             framer=FramerType.SOCKET,
         )
 

@@ -122,3 +122,32 @@ def test_invalid_victron_battery_voltage_range_raises_error():
         p.write_text(bad)
         with pytest.raises(ConfigError, match="battery_voltage_max_v"):
             load_config(str(p))
+
+
+def test_negative_retry_count_raises_error():
+    bad = VALID_CONFIG.replace(
+        "fronius:\n"
+        "  enabled: true\n"
+        "  host: 127.0.0.1\n"
+        "  port: 502\n"
+        "  slave_id: 1\n"
+        "  pv_string_count: 2\n"
+        "  sunspec_model_160_enabled: true\n"
+        "  timeout: 2.0\n"
+        "  log_level: INFO\n",
+        "fronius:\n"
+        "  enabled: true\n"
+        "  host: 127.0.0.1\n"
+        "  port: 502\n"
+        "  slave_id: 1\n"
+        "  pv_string_count: 2\n"
+        "  sunspec_model_160_enabled: true\n"
+        "  timeout: 2.0\n"
+        "  retry_count: -1\n"
+        "  log_level: INFO\n",
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp) / "config.yaml"
+        p.write_text(bad)
+        with pytest.raises(ConfigError, match="retry_count"):
+            load_config(str(p))

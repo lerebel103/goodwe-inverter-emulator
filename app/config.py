@@ -18,6 +18,7 @@ class Em540BridgeConfig:
     port: int = 5001
     slave_id: int = 1
     timeout: float = 1.0
+    retry_count: int = 1
     log_level: str = "INFO"
 
 
@@ -29,7 +30,8 @@ class FroniusConfig:
     slave_id: int = 1
     pv_string_count: int = 2
     sunspec_model_160_enabled: bool = True
-    timeout: float = 2.0
+    timeout: float = 1.0
+    retry_count: int = 1
     log_level: str = "INFO"
 
 
@@ -40,6 +42,7 @@ class VictronConfig:
     port: int = 502
     slave_id: int = 100
     timeout: float = 1.0
+    retry_count: int = 1
     log_level: str = "INFO"
     battery_scale: float = 1.0
     battery_voltage_min_v: float = 0.0
@@ -169,6 +172,19 @@ class ConfigManager:
         cfg.fronius.log_level = str(cfg.fronius.log_level).upper()
         cfg.victron.log_level = str(cfg.victron.log_level).upper()
         cfg.goodwe_emulator.log_level = str(cfg.goodwe_emulator.log_level).upper()
+
+        retry_counts = {
+            "em540_bridge.retry_count": cfg.em540_bridge.retry_count,
+            "fronius.retry_count": cfg.fronius.retry_count,
+            "victron.retry_count": cfg.victron.retry_count,
+        }
+        for key, value in retry_counts.items():
+            if int(value) < 0:
+                raise ConfigError(f"Invalid {key}: {value}")
+
+        cfg.em540_bridge.retry_count = int(cfg.em540_bridge.retry_count)
+        cfg.fronius.retry_count = int(cfg.fronius.retry_count)
+        cfg.victron.retry_count = int(cfg.victron.retry_count)
 
         if float(cfg.victron.battery_scale) <= 0:
             raise ConfigError(f"Invalid victron.battery_scale: {cfg.victron.battery_scale}")
