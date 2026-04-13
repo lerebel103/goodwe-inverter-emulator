@@ -57,6 +57,7 @@ class GoodweEmulatorConfig:
     log_level: str = "INFO"
     serial_number: str = "ETEMU00000001"
     model_name: str = "GW10K-ET"
+    external_model_name: str = "EM540+Fronius+Victron"
     rated_power: int = 10000
 
 

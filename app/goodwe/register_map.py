@@ -23,6 +23,7 @@ def _device_info(regs: dict[int, int], cfg: GoodweEmulatorConfig) -> None:
     put_u16(regs, 35002, 1)
     put_ascii(regs, 35003, cfg.serial_number, 8)
     put_ascii(regs, 35011, cfg.model_name, 5)
+    put_ascii(regs, 35060, cfg.external_model_name, 16)
     put_u16(regs, 35016, 100)
     put_u16(regs, 35017, 100)
     put_u16(regs, 35018, 1)

@@ -37,6 +37,7 @@ goodwe_emulator:
   log_level: INFO
   serial_number: ETEMU00000001
   model_name: GW10K-ET
+  external_model_name: EM540+Fronius+Victron
   rated_power: 10000
 
 root:

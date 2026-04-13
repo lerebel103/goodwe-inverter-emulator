@@ -44,3 +44,17 @@ def put_ascii(registers: dict[int, int], address: int, text: str, register_count
         hi = ord(padded[idx * 2])
         lo = ord(padded[idx * 2 + 1])
         registers[address + idx] = ((hi & 0xFF) << 8) | (lo & 0xFF)
+
+
+def get_ascii(registers: dict[int, int], address: int, register_count: int) -> str:
+    """Extract an ASCII string from registers."""
+    chars = []
+    for idx in range(register_count):
+        reg_value = registers.get(address + idx, 0)
+        hi = (reg_value >> 8) & 0xFF
+        lo = reg_value & 0xFF
+        if hi != 0:
+            chars.append(chr(hi))
+        if lo != 0:
+            chars.append(chr(lo))
+    return "".join(chars).rstrip()

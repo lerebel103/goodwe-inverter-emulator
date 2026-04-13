@@ -153,8 +153,8 @@ The following addresses were repeatedly requested by the HCA G2 during the lates
 
 | Address | Count | Observed TX payload (sample/range) | Notes |
 |---|---:|---|---|
-| 35060 | 16 | `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` | Zero-filled block in current emulator |
-| 35011 | 5 | `[18263, 12592, 19245, 17748, 8224]` | Model name block |
+| 35060 | 16 | `[16965, 12594, 12873, 11822, 11825, 12090, 11821, 12625, 11825, 12098, 12098, ...]` | External Model Name: `EM540+Fronius+Victron` (identifies aggregated data sources) |
+| 35011 | 5 | `[18263, 12592, 19245, 17748, 8224]` | Model name: `GW10K-ET` |
 | 35100 | 1 | `[6660]` | RTC packed year/month |
 | 35137 | 2 | `[0, 5012] .. [0, 5016]` | Signed 32-bit total inverter/PV watts |
 | 37007 | 1 | `[670] .. [667]` | Battery current (`0.1 A` scale) |
