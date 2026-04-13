@@ -98,3 +98,27 @@ def test_invalid_data_timeout_raises_error():
         p.write_text(bad)
         with pytest.raises(ConfigError, match="data_timeout"):
             load_config(str(p))
+
+
+def test_invalid_victron_battery_scale_raises_error():
+    bad = VALID_CONFIG.replace(
+        "slave_id: 100\n  timeout: 1.0\n  log_level: INFO",
+        "slave_id: 100\n  timeout: 1.0\n  log_level: INFO\n  battery_scale: 0",
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp) / "config.yaml"
+        p.write_text(bad)
+        with pytest.raises(ConfigError, match="battery_scale"):
+            load_config(str(p))
+
+
+def test_invalid_victron_battery_voltage_range_raises_error():
+    bad = VALID_CONFIG.replace(
+        "slave_id: 100\n  timeout: 1.0\n  log_level: INFO",
+        "slave_id: 100\n  timeout: 1.0\n  log_level: INFO\n  battery_voltage_min_v: 600\n  battery_voltage_max_v: 180",
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        p = Path(tmp) / "config.yaml"
+        p.write_text(bad)
+        with pytest.raises(ConfigError, match="battery_voltage_max_v"):
+            load_config(str(p))

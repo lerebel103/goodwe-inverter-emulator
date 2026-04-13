@@ -190,3 +190,21 @@ def test_runtime_data_populates_full_pv_channels():
     # 35137/35138 total inverter power should use summed PV channels.
     assert regs[35137] == 0
     assert regs[35138] == 2868
+
+
+def test_battery_current_registers_use_snapshot_current_not_derived_power_ratio():
+    cfg = GoodweEmulatorConfig()
+    snap = Snapshot(
+        battery_voltage_v=520.0,
+        battery_power_w=5200,
+        battery_current_a=12.3,
+    )
+
+    regs = build_register_map(snap, cfg)
+
+    assert regs[35180] == 5200
+    assert regs[35181] == 123
+    assert regs[35182] == 0
+    assert regs[35183] == 5200
+    assert regs[37006] == 5200
+    assert regs[37007] == 123

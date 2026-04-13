@@ -23,6 +23,9 @@ victron:
   slave_id: 100
   timeout: 1.0
   log_level: INFO
+  battery_scale: 1.0
+  battery_voltage_min_v: 0.0
+  battery_voltage_max_v: 1000.0
 
 goodwe_emulator:
   bind_host: 0.0.0.0

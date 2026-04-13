@@ -188,3 +188,43 @@ def test_modbus_server_opens_circuit_after_data_age_exceeds_five_seconds(monkeyp
 def test_default_goodwe_data_timeout_is_five_seconds():
     cfg = AppConfig()
     assert cfg.goodwe_emulator.data_timeout == pytest.approx(5.0)
+
+
+def test_runtime_applies_victron_battery_scaling_before_publishing():
+    runtime, fake_server = _make_runtime()
+    runtime._cfg.victron.battery_scale = 10.0
+    runtime._cfg.victron.battery_voltage_min_v = 180.0
+    runtime._cfg.victron.battery_voltage_max_v = 600.0
+
+    runtime._em540 = _Reader([_valid_em540()])
+    runtime._fronius = _Reader([_valid_fronius()])
+    runtime._victron = _Reader(
+        [
+            {
+                "battery_voltage_v": 52.4,
+                "battery_soc_pct": 64,
+                "battery_power_w": 4700,
+                "battery_current_a": 90.0,
+                "battery_max_charge_voltage_v": 57.6,
+                "battery_min_discharge_voltage_v": 44.0,
+                "battery_max_charge_current_a": 120.0,
+                "battery_max_discharge_current_a": 150.0,
+                "battery_capacity_ah": 200.0,
+                "battery_consumed_ah": 50.0,
+            }
+        ]
+    )
+
+    assert runtime._refresh_once() is True
+    regs = fake_server.updated_payloads[0]
+    assert regs[35180] == 5240
+    assert regs[35181] == 90
+    assert regs[37006] == 5240
+    assert regs[37007] == 90
+    assert regs[37019] == 5760
+    assert regs[37020] == 4400
+    assert regs[37021] == 120
+    assert regs[37022] == 150
+    assert regs[37016] == 200
+    assert regs[37017] == 0
+    assert regs[37018] == 500

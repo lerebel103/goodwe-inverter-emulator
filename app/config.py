@@ -41,6 +41,9 @@ class VictronConfig:
     slave_id: int = 100
     timeout: float = 1.0
     log_level: str = "INFO"
+    battery_scale: float = 1.0
+    battery_voltage_min_v: float = 0.0
+    battery_voltage_max_v: float = 1000.0
 
 
 @dataclass
@@ -165,6 +168,16 @@ class ConfigManager:
         cfg.fronius.log_level = str(cfg.fronius.log_level).upper()
         cfg.victron.log_level = str(cfg.victron.log_level).upper()
         cfg.goodwe_emulator.log_level = str(cfg.goodwe_emulator.log_level).upper()
+
+        if float(cfg.victron.battery_scale) <= 0:
+            raise ConfigError(f"Invalid victron.battery_scale: {cfg.victron.battery_scale}")
+
+        min_v = float(cfg.victron.battery_voltage_min_v)
+        max_v = float(cfg.victron.battery_voltage_max_v)
+        if min_v < 0:
+            raise ConfigError(f"Invalid victron.battery_voltage_min_v: {cfg.victron.battery_voltage_min_v}")
+        if max_v <= min_v:
+            raise ConfigError(f"Invalid victron.battery_voltage_max_v: {cfg.victron.battery_voltage_max_v}")
 
 
 def load_config(config_path: str) -> AppConfig:

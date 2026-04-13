@@ -98,11 +98,47 @@ class EmulatorRuntime:
             logger.exception("Unhandled %s reader failure", name)
             return _SourcePollResult(name=name, success=False, data={})
 
+        if name == "victron":
+            data = self._transform_victron_battery_data(data)
+
         if not validator(data):
             logger.warning("Rejecting %s update; payload missing required valid fields", name)
             return _SourcePollResult(name=name, success=False, data={})
 
         return _SourcePollResult(name=name, success=True, data=data)
+
+    def _transform_victron_battery_data(self, data: dict[str, float | int]) -> dict[str, float | int]:
+        if not data:
+            return data
+
+        out: dict[str, float | int] = dict(data)
+        vcfg = self._cfg.victron
+
+        voltage_fields = (
+            "battery_voltage_v",
+            "battery_starter_voltage_v",
+            "battery_midpoint_voltage_v",
+            "battery_midpoint_deviation_v",
+            "battery_max_charge_voltage_v",
+            "battery_min_discharge_voltage_v",
+        )
+        current_fields = (
+            "battery_current_a",
+            "battery_max_charge_current_a",
+            "battery_max_discharge_current_a",
+        )
+        scale = float(vcfg.battery_scale)
+
+        for key in voltage_fields:
+            if key in out:
+                scaled = float(out[key]) * scale
+                out[key] = max(float(vcfg.battery_voltage_min_v), min(float(vcfg.battery_voltage_max_v), scaled))
+
+        for key in current_fields:
+            if key in out:
+                out[key] = float(out[key]) / scale
+
+        return out
 
     @staticmethod
     def _is_valid_em540(data: dict[str, float | int]) -> bool:

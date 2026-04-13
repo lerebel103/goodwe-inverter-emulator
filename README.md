@@ -47,6 +47,9 @@ Use `docker compose` directly to pull and run that image (without local rebuild)
 - `em540_bridge.host` / `em540_bridge.port`: address of the EM540 bridge service
 - `fronius.host` / `fronius.port`: Fronius endpoint
 - `victron.host` / `victron.port`: Victron endpoint
+- Victron battery systems are typically low-voltage (for example around 48-52V), while GoodWe ET battery telemetry expects a higher-voltage range, so `victron.battery_scale` is used to better emulate ET-style battery voltage/current behavior.
+- `victron.battery_scale`: optional LV-to-HV battery scaling factor (voltage values are multiplied by this factor, current values are divided by this factor)
+- `victron.battery_voltage_min_v`, `victron.battery_voltage_max_v`: clamp window applied after voltage scaling
 - `goodwe_emulator.comm_addr`: Modbus device ID expected by your downstream client (for example charger)
 - `goodwe_emulator.socket_port`: TCP listening port for downstream clients
 

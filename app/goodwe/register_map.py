@@ -89,7 +89,7 @@ def _runtime_data(regs: dict[int, int], snapshot: Snapshot) -> None:
     put_i32(regs, 35363, int(snapshot.inverter_apparent_power_l3_va))
     put_i32(regs, 35182, int(snapshot.battery_power_w))
     put_u16(regs, 35180, int(snapshot.battery_voltage_v * 10))
-    put_i16(regs, 35181, int(snapshot.battery_power_w / max(snapshot.battery_voltage_v, 1) * 10))
+    put_i16(regs, 35181, int(snapshot.battery_current_a * 10))
     put_u16(regs, 35184, 3)
     put_u16(regs, 35187, 1)
     put_u16(regs, 35188, 0)
@@ -160,11 +160,7 @@ def _battery_data(regs: dict[int, int], snapshot: Snapshot) -> None:
 
     # Battery voltage and current
     put_u16(regs, 37006, int(snapshot.battery_voltage_v * 10))  # Battery voltage
-    put_i16(
-        regs,
-        37007,
-        int(snapshot.battery_power_w / max(snapshot.battery_voltage_v, 1) * 10),
-    )  # Battery current
+    put_i16(regs, 37007, int(snapshot.battery_current_a * 10))  # Battery current
 
     # Battery power
     put_i32(regs, 37008, int(snapshot.battery_power_w))  # Battery power
