@@ -149,39 +149,21 @@ Credit: the standalone validation client in this repository is built on top of t
 
 ### Observed Charger Register Poll Set
 
-The following addresses were repeatedly requested by the HCA G2 during the latest capture (09:24:32..09:24:43):
+For reference, the following addresses are requested by the HCA G2:
 
-| Address | Count | Observed TX payload (sample/range) | Notes |
-|---|---:|---|---|
-| 35060 | 16 | `[16965, 12594, 12873, 11822, 11825, 12090, 11821, 12625, 11825, 12098, 12098, ...]` | External Model Name: `EM540+Fronius+Victron` (identifies aggregated data sources) |
-| 35011 | 5 | `[18263, 12592, 19245, 17748, 8224]` | Model name: `GW10K-ET` |
-| 35100 | 1 | `[6660]` | RTC packed year/month |
-| 35137 | 2 | `[0, 5012] .. [0, 5016]` | Signed 32-bit total inverter/PV watts |
-| 37007 | 1 | `[670] .. [667]` | Battery current (`0.1 A` scale) |
-| 39005 | 1 | `[0]` | Observed zero |
-| 35180 | 1 | `[536]` | Battery voltage (`0.1 V` scale) |
-| 47906 | 1 | `[0]` | Observed zero |
-| 35262 | 1 | `[0]` | Observed zero |
-| 47924 | 1 | `[0]` | Observed zero |
-| 36025 | 2 | `[0, 32] .. [0, 56]` | Signed 32-bit meter total active power |
-| 36055 | 3 | `[22, 20, 34] .. [22, 20, 35]` | Meter currents L1/L2/L3 (`0.1 A`) |
-| 35105 | 14 | `[0, 1179, 2784, 145, 0, 4047..4050, 0, 0, 0, 0, 0, 0, 0, 0]` | PV detail/runtime block |
+| Address | Count | Observed TX payload (sample/range) | Notes | Decoded example |
+|---|---:|---|---|---|
+| 35060 | 16 | `[16965, 12594, 12873, 11822, 11825, 12090, 11821, 12625, 11825, 12098, 12098, ...]` | External Model Name (string block) | `EM540+Fronius+Victron` |
+| 35011 | 5 | `[18263, 12592, 19245, 17748, 8224]` | Model name string block | `GW10K-ET` |
+| 35100 | 1 | `[6660]` | RTC packed year/month | `0x1A04` => year `26`, month `4` |
+| 35137 | 2 | `[0, 5012] .. [0, 5016]` | Signed 32-bit total inverter/PV watts | `5012..5016 W` |
+| 37007 | 1 | `[670] .. [667]` | Battery current (`0.1 A` scale) | `67.0..66.7 A` |
+| 39005 | 1 | `[0]` | BMS2 SOC (secondary battery channel) | `0 %` |
+| 35180 | 1 | `[536]` | Battery voltage (`0.1 V` scale) | `53.6 V` |
+| 47906 | 1 | `[0]` | BMS battery voltage (RW BMS path) | `0.0 V` (historical sample) |
+| 35262 | 1 | `[0]` | Battery2 voltage (`0.1 V`, secondary channel) | `0.0 V` |
+| 47924 | 1 | `[0]` | BMS battery2 voltage (RW BMS path) | `0.0 V` |
+| 36025 | 2 | `[0, 32] .. [0, 56]` | Signed 32-bit meter total active power | `32..56 W` |
+| 36055 | 3 | `[22, 20, 34] .. [22, 20, 35]` | Meter currents L1/L2/L3 (`0.1 A`) | `2.2 A`, `2.0 A`, `3.4..3.5 A` |
+| 35105 | 14 | `[0, 1179, 2784, 145, 0, 4047..4050, 0, 0, 0, 0, 0, 0, 0, 0]` | PV detail/runtime block | e.g. PV1 `117.9 V`, `278.4 A`, `145 W`; PV2 power `4047..4050 W` |
 
-### Register Decoding Notes for This Poll Set
-
-- `35100`: packed as `(year % 100) << 8 | month`
-- `35137..35138`: signed 32-bit watts (`i32`), total PV power
-- `35180`: battery voltage in `0.1 V` units
-- `36025..36026`: signed 32-bit watts (`i32`), total meter active power
-- `36055..36057`: phase currents in `0.1 A` units
-- `37007`: battery current in `0.1 A` units
-
-### Example Values Seen in Validation Run
-
-- `35137..35138`: `5012..5016 W` (signed 32-bit total inverter/PV)
-- `35180`: `53.6 V`
-- `37007`: `66.7..67.0 A`
-- `36025..36026`: `32..56 W` (signed 32-bit)
-- `36055..36057`: `2.2 A`, `2.0 A`, `3.4..3.5 A`
-
-These values are consistent with the current mapping implemented in `app/goodwe/register_map.py` and with circuit-breaker behavior in `app/goodwe/server.py`.
