@@ -1,26 +1,88 @@
 # GoodWe ET Inverter Emulator
 
-GoodWe ET-series hybrid inverter emulator that aggregates data from:
+[![GitHub](https://img.shields.io/badge/GitHub-lerebel103%2Fgoodwe--inverter--emulator-blue?logo=github)](https://github.com/lerebel103/goodwe-inverter-emulator)
+
+GoodWe ET-series hybrid inverter emulator created to allow a GoodWe HCA G2 22kW EV charger to operate in environments where no physical GoodWe inverter is installed.
+
+Although it was developed for this EV charger use case, it may also work with other GoodWe appliances that require inverter-style data over Modbus.
+
+It aggregates data from:
 
 - EM540 bridge (meter data over Modbus/TCP)
 - Fronius Symo (PV data over Modbus/TCP)
 - Victron GX (battery data over Modbus/TCP)
 
-The project is Modbus-only for runtime integrations and emulation.
-
-It serves a GoodWe-like Modbus/TCP endpoint so tools such as the Python `goodwe` ET client can connect and read expected ET register ranges.
+The EM540 in this integration refers to the Carlo Gavazzi EM540 energy meter, selected for high sampling rates and accuracy for grid telemetry.
 
 Validation support in this repository also uses the open-source GoodWe Python SDK from `marcelblijleven/goodwe`: https://github.com/marcelblijleven/goodwe
 
-## Functional Goals
+This emulator was developed to work directly with the EM540 bridge from:
 
-- Emulate a GoodWe ET-series Modbus/TCP inverter interface so a GoodWe HCA G2 22kW EV charger can operate with full inverter-driven functionality even when no physical GoodWe inverter is present.
-- Aggregate meter, PV, and battery telemetry from upstream systems (EM540 bridge, Fronius Symo, and Victron GX) into a single coherent ET-style register image.
-- Serve the core ET register ranges and scaling conventions used by downstream clients, with stable decoding for power, voltage, current, RTC, and energy values.
-- Protect downstream consumers from invalid or stale upstream data by using an explicit readiness gate plus a downstream circuit breaker that rejects reads until data is fresh.
-- Provide a practical integration bridge for non-GoodWe sites that need charger compatibility and behavior close to a real GoodWe ET inverter.
+- https://github.com/lerebel103/carlo-gavazzi-em540-bridge
 
-## Quick Start
+It expects EM540 meter telemetry from that bridge project and maps it into a GoodWe ET-compatible Modbus register image.
+
+## Features
+
+- GoodWe ET-style Modbus/TCP register emulation for downstream clients (including HCA charger scenarios)
+- Aggregation of meter (EM540 bridge), PV (Fronius), and battery (Victron) telemetry
+- Safety-first freshness gate with downstream Modbus circuit breaker behavior
+- Validation client built on the open-source GoodWe Python SDK
+
+## Requirements
+
+- Physical RS485-to-TCP converter (for example USR-TCP232-304) to allow the EV charger RS485/Modbus side to connect to this app over TCP
+- Upstream EM540 bridge running and reachable over the configured host/port
+- Victron GX device reachable on the network with Modbus/TCP enabled
+- Fronius Snap Inverter reachable on the network with Modbus enabled
+- Docker Engine + Docker Compose plugin
+- Optional manual path only: Python 3.13+ with dependencies from `requirements*.txt`
+
+## Install and Run with Docker Compose (Recommended)
+
+This repository ships with a compose file that points to the pre-built image:
+
+- `lerebel103/goodwe-et-inverter-emulator:latest`
+
+Use `docker compose` directly to pull and run that image (without local rebuild).
+
+1. Copy `config-default.yaml` to `config.yaml` and adjust hostnames/IPs.
+2. Configure `config.yaml` for your environment:
+
+- `em540_bridge.host` / `em540_bridge.port`: address of the EM540 bridge service
+- `fronius.host` / `fronius.port`: Fronius endpoint
+- `victron.host` / `victron.port`: Victron endpoint
+- `goodwe_emulator.comm_addr`: Modbus device ID expected by your downstream client (for example charger)
+- `goodwe_emulator.socket_port`: TCP listening port for downstream clients
+
+3. Start with pre-built image:
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+4. View logs:
+
+```bash
+docker compose logs -f goodwe-et-inverter-emulator
+```
+
+5. Stop the stack:
+
+```bash
+docker compose down
+```
+
+Notes:
+
+- The compose file mounts `./config.yaml` into the container at `/etc/goodwe-emulator/config.yaml`.
+- Port `8899` is published by default from the compose file.
+- `make up` currently runs compose with `--build`; use the commands above when you want pre-built images only.
+
+## Build and Run Manually (Optional, Non-Docker)
+
+Use this path only if you do not want Docker.
 
 Prerequisite: deploy and run the EM540 meter bridge service before starting this emulator, because meter telemetry is sourced from that upstream service.
 
@@ -41,10 +103,11 @@ pip install -r requirements.txt -r requirements-dev.txt
 python -m app --config config.yaml
 ```
 
-4. Or run with Docker:
+4. (Optional) Run checks:
 
 ```bash
-make up
+make lint
+make test
 ```
 
 ## Quality Gates
@@ -61,11 +124,6 @@ make install-hooks
 
 The pre-commit hook runs `make lint`.
 
-## Git Hooks
-
-- Tracked hooks live in `.githooks/`
-- Run `make install-hooks` once per clone to set `core.hooksPath`
-
 ## Current Register Coverage
 
 The emulator currently implements core ET ranges used by common clients:
@@ -74,7 +132,7 @@ The emulator currently implements core ET ranges used by common clients:
 - Runtime block: `35100+`
 - Meter block: `36000+`
 - Battery block: `37000+`
-- Key settings: `45127`, `45356`, `47509-47512`
+- Key settings: `45127`, `45356`, `45482`, `47509-47512`
 
 This is intentionally extensible so you can complete strict one-to-one mapping from your official GoodWe ET PDF.
 
@@ -93,21 +151,23 @@ Credit: the standalone validation client in this repository is built on top of t
 
 ### Observed Charger Register Poll Set
 
-The following addresses were repeatedly requested by the HCA G2 during the capture:
+The following addresses were repeatedly requested by the HCA G2 during the latest capture (09:24:32..09:24:43):
 
-- `35011` count `5` (model name block)
-- `35060` count `16` (observed zero-filled in current emulator)
-- `35100` count `1` (RTC packed year/month)
-- `35105` count `14` (PV detail block)
-- `35137` count `2` (total PV power)
-- `35180` count `1` (battery voltage)
-- `35262` count `1` (observed zero)
-- `36025` count `2` (meter total active power, signed 32-bit)
-- `36055` count `3` (meter currents L1/L2/L3)
-- `37007` count `1` (battery current)
-- `39005` count `1` (observed zero)
-- `47906` count `1` (observed zero)
-- `47924` count `1` (observed zero)
+| Address | Count | Observed TX payload (sample/range) | Notes |
+|---|---:|---|---|
+| 35060 | 16 | `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` | Zero-filled block in current emulator |
+| 35011 | 5 | `[18263, 12592, 19245, 17748, 8224]` | Model name block |
+| 35100 | 1 | `[6660]` | RTC packed year/month |
+| 35137 | 2 | `[0, 5012] .. [0, 5016]` | Signed 32-bit total inverter/PV watts |
+| 37007 | 1 | `[670] .. [667]` | Battery current (`0.1 A` scale) |
+| 39005 | 1 | `[0]` | Observed zero |
+| 35180 | 1 | `[536]` | Battery voltage (`0.1 V` scale) |
+| 47906 | 1 | `[0]` | Observed zero |
+| 35262 | 1 | `[0]` | Observed zero |
+| 47924 | 1 | `[0]` | Observed zero |
+| 36025 | 2 | `[0, 32] .. [0, 56]` | Signed 32-bit meter total active power |
+| 36055 | 3 | `[22, 20, 34] .. [22, 20, 35]` | Meter currents L1/L2/L3 (`0.1 A`) |
+| 35105 | 14 | `[0, 1179, 2784, 145, 0, 4047..4050, 0, 0, 0, 0, 0, 0, 0, 0]` | PV detail/runtime block |
 
 ### Register Decoding Notes for This Poll Set
 
@@ -120,10 +180,10 @@ The following addresses were repeatedly requested by the HCA G2 during the captu
 
 ### Example Values Seen in Validation Run
 
-- `35137`: `5979..5982 W` (total PV)
-- `35180`: `54.3 V`
-- `37007`: `58.0 A`
-- `36025`: `105 W`
-- `36055..36057`: `3.2 A`, `3.3 A`, `6.3 A`
+- `35137..35138`: `5012..5016 W` (signed 32-bit total inverter/PV)
+- `35180`: `53.6 V`
+- `37007`: `66.7..67.0 A`
+- `36025..36026`: `32..56 W` (signed 32-bit)
+- `36055..36057`: `2.2 A`, `2.0 A`, `3.4..3.5 A`
 
 These values are consistent with the current mapping implemented in `app/goodwe/register_map.py` and with circuit-breaker behavior in `app/goodwe/server.py`.
