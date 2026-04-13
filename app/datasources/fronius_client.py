@@ -39,6 +39,7 @@ SUNSPEC_MAX_MODELS_TO_SCAN = 64
 SUNSPEC_MIN_SCALE_FACTOR = -6
 SUNSPEC_MAX_SCALE_FACTOR = 6
 _LOGGED_INVERTER_MODELS: set[int] = set()
+_LOGGED_TEMPERATURE_DEBUG_MODELS: set[int] = set()
 
 
 class FroniusClient:
@@ -304,9 +305,14 @@ def _read_sunspec_inverter_ac_power(
                 apparent_total,
                 _read_f32_from_model(regs, value_index=28),
             )
-            temperature_air = _read_f32_from_model(regs, value_index=38)
-            temperature_radiator = _read_f32_from_model(regs, value_index=40)
-            temperature_module = _read_f32_from_model(regs, value_index=42)
+            temperature_air, temperature_module, temperature_radiator = _read_model_temperatures(regs)
+            _log_temperature_debug_once(
+                model_id,
+                regs,
+                temperature_air,
+                temperature_module,
+                temperature_radiator,
+            )
             phase_weights = [
                 max(0.0, current_l1 * voltage_l1),
                 max(0.0, current_l2 * voltage_l2),
@@ -391,6 +397,14 @@ def _read_sunspec_inverter_ac_power(
             active_total = int(_read_f32_from_model(regs, value_index=20))
             apparent_total = int(_read_f32_from_model(regs, value_index=24))
             reactive_total = int(_read_f32_from_model(regs, value_index=26))
+            temperature_air, temperature_module, temperature_radiator = _read_model_temperatures(regs)
+            _log_temperature_debug_once(
+                model_id,
+                regs,
+                temperature_air,
+                temperature_module,
+                temperature_radiator,
+            )
             return {
                 "inverter_current_l1_a": _read_f32_from_model(regs, value_index=2),
                 "inverter_voltage_l1_v": _read_f32_from_model(regs, value_index=14),
@@ -406,9 +420,9 @@ def _read_sunspec_inverter_ac_power(
                     apparent_total,
                     _read_f32_from_model(regs, value_index=28),
                 ),
-                "inverter_temperature_air_c": _read_f32_from_model(regs, value_index=38),
-                "inverter_temperature_module_c": _read_f32_from_model(regs, value_index=42),
-                "inverter_temperature_radiator_c": _read_f32_from_model(regs, value_index=40),
+                "inverter_temperature_air_c": temperature_air,
+                "inverter_temperature_module_c": temperature_module,
+                "inverter_temperature_radiator_c": temperature_radiator,
             }
 
     model_101 = model_index.get(SUNSPEC_MODEL_101_ID)
@@ -484,6 +498,169 @@ def _read_f32_from_model(regs: list[int], value_index: int) -> float:
     return float(value)
 
 
+def _is_plausible_temperature_c(value: float) -> bool:
+    return math.isfinite(value) and -40.0 <= value <= 180.0
+
+
+def _is_effective_zero(value: float) -> bool:
+    return abs(float(value)) < 0.05
+
+
+def _normalize_temperature_c(value: float) -> float | None:
+    if not math.isfinite(value):
+        return None
+
+    # Some firmware variants expose temperatures with an unexpected scale.
+    # Try common decimal shifts and keep only physically plausible values.
+    for scale in (1.0, 0.1, 0.01, 0.001):
+        candidate = float(value) * scale
+        if _is_plausible_temperature_c(candidate) and not _is_effective_zero(candidate):
+            return candidate
+
+    return None
+
+
+def _read_model_temperature_f32(regs: list[int], *, primary_index: int, fallback_index: int) -> float:
+    primary = _read_f32_from_model(regs, value_index=primary_index)
+    if _is_plausible_temperature_c(primary) and not _is_effective_zero(primary):
+        return primary
+
+    fallback = _read_f32_from_model(regs, value_index=fallback_index)
+    if _is_plausible_temperature_c(fallback) and not _is_effective_zero(fallback):
+        return fallback
+
+    if _is_plausible_temperature_c(primary):
+        return primary
+    if _is_plausible_temperature_c(fallback):
+        return fallback
+    return 0.0
+
+
+def _read_model_temperatures(regs: list[int]) -> tuple[float, float, float]:
+    # (air, module, radiator) candidate triplets seen across Fronius firmware variants.
+    candidate_triplets = (
+        (38, 42, 40),
+        (30, 34, 32),
+        (32, 36, 34),
+        (34, 38, 36),
+    )
+
+    best_triplet = (0.0, 0.0, 0.0)
+    best_score = (-1, -1)
+
+    for air_idx, module_idx, radiator_idx in candidate_triplets:
+        air = _read_f32_from_model(regs, value_index=air_idx)
+        module = _read_f32_from_model(regs, value_index=module_idx)
+        radiator = _read_f32_from_model(regs, value_index=radiator_idx)
+        values = (air, module, radiator)
+        normalized = tuple(_normalize_temperature_c(value) for value in values)
+
+        plausible = sum(1 for value in normalized if value is not None)
+        non_zero_plausible = plausible
+        score = (non_zero_plausible, plausible)
+        if score > best_score:
+            best_score = score
+            best_triplet = tuple(value if value is not None else 0.0 for value in normalized)
+
+    # If we have at least two valid sensors from float data, trust that mapping.
+    if best_score[0] >= 2:
+        return _impute_missing_temperatures(best_triplet)
+
+    # Fallback for devices exposing model-103 style int16 temperatures even with float models.
+    scaled_air = _read_scaled_from_model_i16(regs, value_index=31, sf_index=35)
+    scaled_module = _read_scaled_from_model_i16(regs, value_index=33, sf_index=35)
+    scaled_radiator = _read_scaled_from_model_i16(regs, value_index=32, sf_index=35)
+    scaled_normalized = (
+        _normalize_temperature_c(scaled_air),
+        _normalize_temperature_c(scaled_module),
+        _normalize_temperature_c(scaled_radiator),
+    )
+    if any(value is not None for value in scaled_normalized):
+        return _impute_missing_temperatures(tuple(value if value is not None else 0.0 for value in scaled_normalized))
+
+    # If only one sensor is available, mirror it to all three fields so downstream
+    # consumers do not treat temperatures as missing.
+    non_zero = [value for value in best_triplet if not _is_effective_zero(value)]
+    if len(non_zero) == 1:
+        return (non_zero[0], non_zero[0], non_zero[0])
+
+    return _impute_missing_temperatures(best_triplet)
+
+
+def _impute_missing_temperatures(temps: tuple[float, float, float]) -> tuple[float, float, float]:
+    air, module, radiator = temps
+    non_zero = [value for value in (air, module, radiator) if not _is_effective_zero(value)]
+    if not non_zero:
+        return temps
+
+    if len(non_zero) == 1:
+        value = non_zero[0]
+        return (value, value, value)
+
+    fill_value = float(sum(non_zero) / len(non_zero))
+    if _is_effective_zero(air):
+        air = fill_value
+    if _is_effective_zero(module):
+        module = fill_value
+    if _is_effective_zero(radiator):
+        radiator = fill_value
+
+    return (air, module, radiator)
+
+
+def _log_temperature_debug_once(
+    model_id: int,
+    regs: list[int],
+    air_c: float,
+    module_c: float,
+    radiator_c: float,
+) -> None:
+    if model_id in _LOGGED_TEMPERATURE_DEBUG_MODELS:
+        return
+
+    if not (_is_effective_zero(air_c) and _is_effective_zero(module_c) and _is_effective_zero(radiator_c)):
+        return
+
+    _LOGGED_TEMPERATURE_DEBUG_MODELS.add(model_id)
+
+    candidate_triplets = {
+        "38/42/40": (
+            _read_f32_from_model(regs, value_index=38),
+            _read_f32_from_model(regs, value_index=42),
+            _read_f32_from_model(regs, value_index=40),
+        ),
+        "30/34/32": (
+            _read_f32_from_model(regs, value_index=30),
+            _read_f32_from_model(regs, value_index=34),
+            _read_f32_from_model(regs, value_index=32),
+        ),
+        "32/36/34": (
+            _read_f32_from_model(regs, value_index=32),
+            _read_f32_from_model(regs, value_index=36),
+            _read_f32_from_model(regs, value_index=34),
+        ),
+        "34/38/36": (
+            _read_f32_from_model(regs, value_index=34),
+            _read_f32_from_model(regs, value_index=38),
+            _read_f32_from_model(regs, value_index=36),
+        ),
+    }
+    scaled_triplet = (
+        _read_scaled_from_model_i16(regs, value_index=31, sf_index=35),
+        _read_scaled_from_model_i16(regs, value_index=33, sf_index=35),
+        _read_scaled_from_model_i16(regs, value_index=32, sf_index=35),
+    )
+    raw_window = [regs[i] if i < len(regs) else None for i in range(28, 45)]
+
+    logger.warning(
+        "Fronius model %s temperatures decoded as zero; candidates=%s scaled31/33/32=%s raw28..44=%s",
+        model_id,
+        candidate_triplets,
+        scaled_triplet,
+        raw_window,
+    )
+
+
 def _split_total_by_weights(total: int, weights: list[float]) -> tuple[int, int, int]:
     if len(weights) != 3:
         return 0, 0, total
@@ -551,6 +728,15 @@ def _read_sunspec_model_160(
     dca_sf = _to_i16(regs[0])
     dcv_sf = _to_i16(regs[1])
     dcw_sf = _to_i16(regs[2])
+
+    # Guard SunSpec scale factors to avoid stale/invalid values producing
+    # nonsense PV telemetry. Returning {} allows legacy PV fallback in caller.
+    if any(
+        sf == -32768 or sf < SUNSPEC_MIN_SCALE_FACTOR or sf > SUNSPEC_MAX_SCALE_FACTOR
+        for sf in (dca_sf, dcv_sf, dcw_sf)
+    ):
+        return {}
+
     module_count = max(0, int(regs[6]))
 
     module_len = 20
@@ -586,9 +772,14 @@ def _read_sunspec_model_160(
         # SunSpec uint16 "not implemented" sentinel — treat as zero rather than
         # producing a large spurious value after scale factor is applied.
         _U16_NI = 0xFFFF
-        current_a = float(dca_raw * (10**dca_sf)) if dca_raw != _U16_NI else 0.0
-        voltage_v = float(dcv_raw * (10**dcv_sf)) if dcv_raw != _U16_NI else 0.0
-        power_w = int(dcw_raw * (10**dcw_sf)) if dcw_raw != _U16_NI else 0
+        try:
+            current_a = float(dca_raw * (10**dca_sf)) if dca_raw != _U16_NI else 0.0
+            voltage_v = float(dcv_raw * (10**dcv_sf)) if dcv_raw != _U16_NI else 0.0
+            power_w = int(dcw_raw * (10**dcw_sf)) if dcw_raw != _U16_NI else 0
+        except OverflowError:
+            current_a = 0.0
+            voltage_v = 0.0
+            power_w = 0
 
         channel = index + 1
         out[f"pv{channel}_current_a"] = max(0.0, current_a)

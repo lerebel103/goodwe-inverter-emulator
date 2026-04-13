@@ -124,6 +124,13 @@ class _FakeModel160Client:
         return None
 
 
+class _FakeModel160BadScaleClient(_FakeModel160Client):
+    def __init__(self, host: str, port: int, timeout: float, **kwargs):
+        super().__init__(host, port, timeout, **kwargs)
+        # Invalid SunSpec sunssf sentinel for DCA_SF.
+        self._map[40008] = 0x8000
+
+
 class _FakeModel160FourModulesClient(_FakeModel160Client):
     def __init__(self, host: str, port: int, timeout: float, **kwargs):
         super().__init__(host, port, timeout, **kwargs)
@@ -353,6 +360,17 @@ def test_fronius_client_reads_sunspec_model_160_extended_pv_arrays(monkeypatch):
     assert data["pv_power_w"] == 2100
 
 
+def test_sunspec_model_160_rejects_invalid_scale_factors():
+    client = _FakeModel160BadScaleClient("127.0.0.1", 502, 2.0)
+    model_data = fronius_module._read_sunspec_model_160(
+        client,
+        slave_id=1,
+        string_count=2,
+        model_index={160: (40008, 48)},
+    )
+    assert model_data == {}
+
+
 def test_fronius_client_limits_sunspec_model_160_to_two_strings(monkeypatch):
     monkeypatch.setattr(
         fronius_module,
@@ -469,3 +487,99 @@ def test_scale_helpers_reject_out_of_range_scale_factor():
     regs = [1234, 32767]
     assert fronius_module._read_scaled_from_model_i16(regs, 0, 1) == 0.0
     assert fronius_module._read_scaled_from_model_u16(regs, 0, 1) == 0.0
+
+
+def test_model_temperature_f32_uses_fallback_offsets_when_primary_is_zero():
+    regs = [0] * 44
+
+    def set_f32(reg_index: int, value: float) -> None:
+        hi, lo = _f32_regs(value)
+        regs[reg_index] = hi
+        regs[reg_index + 1] = lo
+
+    # Primary model-113 offsets (38/40/42) decode to 0.0 on this device.
+    set_f32(38, 0.0)
+    set_f32(40, 0.0)
+    set_f32(42, 0.0)
+    # Alternate offsets used by some Fronius firmware variants.
+    set_f32(30, 33.2)
+    set_f32(32, 48.1)
+    set_f32(34, 41.7)
+
+    assert fronius_module._read_model_temperature_f32(regs, primary_index=38, fallback_index=30) == pytest.approx(
+        33.2, rel=1e-6
+    )
+    assert fronius_module._read_model_temperature_f32(regs, primary_index=40, fallback_index=32) == pytest.approx(
+        48.1, rel=1e-6
+    )
+    assert fronius_module._read_model_temperature_f32(regs, primary_index=42, fallback_index=34) == pytest.approx(
+        41.7, rel=1e-6
+    )
+
+
+def test_model_temperatures_reads_alternate_triplet_layout():
+    regs = [0] * 48
+
+    def set_f32(reg_index: int, value: float) -> None:
+        hi, lo = _f32_regs(value)
+        regs[reg_index] = hi
+        regs[reg_index + 1] = lo
+
+    # Firmware variant where temperatures are at (32, 36, 34) for air/module/radiator.
+    set_f32(32, 30.4)
+    set_f32(36, 41.2)
+    set_f32(34, 46.9)
+
+    air, module, radiator = fronius_module._read_model_temperatures(regs)
+    assert air == pytest.approx(30.4, rel=1e-6)
+    assert module == pytest.approx(41.2, rel=1e-6)
+    assert radiator == pytest.approx(46.9, rel=1e-6)
+
+
+def test_model_temperatures_falls_back_to_scaled_layout_when_float_is_zero():
+    regs = [0] * 48
+    regs[31] = 315  # 31.5C
+    regs[32] = 455  # 45.5C
+    regs[33] = 400  # 40.0C
+    regs[35] = 0xFFFF  # sunssf = -1
+
+    air, module, radiator = fronius_module._read_model_temperatures(regs)
+    assert air == pytest.approx(31.5, rel=1e-6)
+    assert module == pytest.approx(40.0, rel=1e-6)
+    assert radiator == pytest.approx(45.5, rel=1e-6)
+
+
+def test_model_temperatures_normalizes_oddly_scaled_float_values_and_mirrors_single_sensor():
+    regs = [0] * 48
+
+    def set_f32(reg_index: int, value: float) -> None:
+        hi, lo = _f32_regs(value)
+        regs[reg_index] = hi
+        regs[reg_index + 1] = lo
+
+    # One valid temperature encoded at unexpected scale (x100).
+    set_f32(36, 7355.48)
+
+    air, module, radiator = fronius_module._read_model_temperatures(regs)
+    assert air == pytest.approx(73.5548, rel=1e-6)
+    assert module == pytest.approx(73.5548, rel=1e-6)
+    assert radiator == pytest.approx(73.5548, rel=1e-6)
+
+
+def test_model_temperatures_backfills_missing_module_from_available_sensors():
+    regs = [0] * 48
+
+    def set_f32(reg_index: int, value: float) -> None:
+        hi, lo = _f32_regs(value)
+        regs[reg_index] = hi
+        regs[reg_index + 1] = lo
+
+    # Primary triplet yields air/radiator but module is missing.
+    set_f32(38, 30.0)  # air
+    set_f32(40, 50.0)  # radiator
+    set_f32(42, 0.0)  # module missing
+
+    air, module, radiator = fronius_module._read_model_temperatures(regs)
+    assert air == pytest.approx(30.0, rel=1e-6)
+    assert module == pytest.approx(40.0, rel=1e-6)
+    assert radiator == pytest.approx(50.0, rel=1e-6)
