@@ -53,6 +53,19 @@ make up
 - Format: `make format`
 - Tests: `make test`
 
+To enable the repository's tracked pre-commit hook locally, run:
+
+```bash
+make install-hooks
+```
+
+The pre-commit hook runs `make lint`.
+
+## Git Hooks
+
+- Tracked hooks live in `.githooks/`
+- Run `make install-hooks` once per clone to set `core.hooksPath`
+
 ## Current Register Coverage
 
 The emulator currently implements core ET ranges used by common clients:

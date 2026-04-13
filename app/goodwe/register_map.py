@@ -68,7 +68,9 @@ def _runtime_data(regs: dict[int, int], snapshot: Snapshot) -> None:
     total_pv = int(snapshot.pv1_power_w + snapshot.pv2_power_w + snapshot.pv3_power_w + snapshot.pv4_power_w)
     if total_pv <= 0:
         total_pv = int(snapshot.pv_power_w)
-    total_inverter_power = int(snapshot.inverter_active_power_w) if int(snapshot.inverter_active_power_w) != 0 else total_pv
+    total_inverter_power = (
+        int(snapshot.inverter_active_power_w) if int(snapshot.inverter_active_power_w) != 0 else total_pv
+    )
     put_i32(regs, 35137, total_inverter_power)
 
     put_i16(regs, 35140, int(snapshot.inverter_active_power_w))

@@ -17,6 +17,7 @@ help:
 	@echo "  test-parallel - Run all tests in parallel (-n auto)"
 	@echo "  lint        - Run linting checks"
 	@echo "  format      - Format code"
+	@echo "  install-hooks - Configure tracked git hooks for this repo"
 	@echo "  clean       - Clean up Docker resources"
 
 .PHONY: build
@@ -75,6 +76,10 @@ lint:
 format:
 	$(PYTHON) -m ruff format app/ tests/
 	$(PYTHON) -m ruff check --fix app/ tests/
+
+.PHONY: install-hooks
+install-hooks:
+	git config core.hooksPath .githooks
 
 .PHONY: clean
 clean:

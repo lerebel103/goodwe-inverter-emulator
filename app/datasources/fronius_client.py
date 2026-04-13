@@ -299,7 +299,11 @@ def _read_sunspec_inverter_ac_power(
             active_total = int(_read_f32_from_model(regs, value_index=20))
             apparent_total = int(_read_f32_from_model(regs, value_index=24))
             reactive_total = int(_read_f32_from_model(regs, value_index=26))
-            power_factor = _derive_power_factor(active_total, apparent_total, _read_f32_from_model(regs, value_index=28))
+            power_factor = _derive_power_factor(
+                active_total,
+                apparent_total,
+                _read_f32_from_model(regs, value_index=28),
+            )
             temperature_air = _read_f32_from_model(regs, value_index=38)
             temperature_radiator = _read_f32_from_model(regs, value_index=40)
             temperature_module = _read_f32_from_model(regs, value_index=42)
@@ -397,7 +401,11 @@ def _read_sunspec_inverter_ac_power(
                 "inverter_apparent_power_l1_va": apparent_total,
                 "inverter_reactive_power_var": reactive_total,
                 "inverter_reactive_power_l1_var": reactive_total,
-                "inverter_power_factor": _derive_power_factor(active_total, apparent_total, _read_f32_from_model(regs, value_index=28)),
+                "inverter_power_factor": _derive_power_factor(
+                    active_total,
+                    apparent_total,
+                    _read_f32_from_model(regs, value_index=28),
+                ),
                 "inverter_temperature_air_c": _read_f32_from_model(regs, value_index=38),
                 "inverter_temperature_module_c": _read_f32_from_model(regs, value_index=42),
                 "inverter_temperature_radiator_c": _read_f32_from_model(regs, value_index=40),
