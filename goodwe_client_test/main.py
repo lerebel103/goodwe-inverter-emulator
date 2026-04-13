@@ -312,124 +312,129 @@ async def poll_once(host: str, port: int, unit_id: int, timeout: float, family: 
         retries=1,
         do_discover=False,
     )
-    runtime_data = await inverter.read_runtime_data()
-    model_name = str(getattr(inverter, "model_name", "") or "")
-    external_model_name = str(getattr(inverter, "external_model_name", "") or "")
-    if not external_model_name:
-        external_model_name = await _read_external_model_name(inverter)
-
+    inverter.set_keep_alive(True)
     try:
-        runtime_data["power_factor"] = await inverter.read_setting("power_factor")
-    except Exception:
-        runtime_data["power_factor"] = runtime_data.get("power_factor")
+        runtime_data = await inverter.read_runtime_data()
+        model_name = str(getattr(inverter, "model_name", "") or "")
+        external_model_name = str(getattr(inverter, "external_model_name", "") or "")
+        if not external_model_name:
+            external_model_name = await _read_external_model_name(inverter)
 
-    selected = {
-        key: runtime_data.get(key)
-        for key in (
-            "timestamp",
-            # PV
-            "vpv1",
-            "ipv1",
-            "ppv1",
-            "vpv2",
-            "ipv2",
-            "ppv2",
-            "ppv",
-            # Battery
-            "vbattery1",
-            "ibattery1",
-            "pbattery1",
-            # Meter active power
-            "pgrid",
-            "pgrid1",
-            "pgrid2",
-            "pgrid3",
-            "active_power",
-            "meter_active_power1",
-            "meter_active_power2",
-            "meter_active_power3",
-            "meter_active_power_total",
-            # Meter reactive power (SDK keys from et.py: Reactive/Reactive4 sensors)
-            "reactive_power",
-            "reactive_power_total",
-            "reactive_power1",
-            "reactive_power2",
-            "reactive_power3",
-            "meter_reactive_power1",
-            "meter_reactive_power2",
-            "meter_reactive_power3",
-            "meter_reactive_power_total",
-            # Meter apparent power (SDK keys from et.py: Apparent/Apparent4 sensors)
-            "apparent_power",
-            "apparent_power1",
-            "apparent_power2",
-            "apparent_power3",
-            "meter_apparent_power1",
-            "meter_apparent_power2",
-            "meter_apparent_power3",
-            "meter_apparent_power_total",
-            # Inverter PF and temperatures
-            "power_factor",
-            "temperature_air",
-            "temperature_module",
-            "temperature",
-            # Meter voltage
-            "vgrid",
-            "vgrid1",
-            "vgrid2",
-            "vgrid3",
-            "fgrid",
-            "fgrid2",
-            "fgrid3",
-            "vac1",
-            "vac2",
-            "vac3",
-            # Meter diagnostic/status and aliases
-            "meter_test_status",
-            "meter_comm_status",
-            "meter_type",
-            "meter_sw_version",
-            "meter_power_factor1",
-            "meter_power_factor2",
-            "meter_power_factor3",
-            "meter_power_factor",
-            "meter_freq",
-            "meter_voltage1",
-            "meter_voltage2",
-            "meter_voltage3",
-            "meter_current1",
-            "meter_current2",
-            "meter_current3",
-            # Meter current
-            "igrid",
-            "igrid1",
-            "igrid2",
-            "igrid3",
-            "iac1",
-            "iac2",
-            "iac3",
-            # Meter energy totals (Energy8 at 36104/36120 overwrite f32 at 36015/36017 in SDK dict)
-            "meter_e_total_exp",
-            "meter_e_total_imp",
-            # Meter energy per-phase export (Energy8 at 36092/36096/36100)
-            "meter_e_total_exp1",
-            "meter_e_total_exp2",
-            "meter_e_total_exp3",
-            # Meter energy per-phase import (Energy8 at 36108/36112/36116)
-            "meter_e_total_imp1",
-            "meter_e_total_imp2",
-            "meter_e_total_imp3",
-        )
-        if key in runtime_data
-    }
+        try:
+            runtime_data["power_factor"] = await inverter.read_setting("power_factor")
+        except Exception:
+            runtime_data["power_factor"] = runtime_data.get("power_factor")
 
-    return {
-        "target": {"host": host, "port": port, "unit_id": unit_id, "family": family},
-        "source": "goodwe-sdk",
-        "sdk_sensor_count": len(runtime_data),
-        "sdk_selected_values": selected,
-        "decoded_key_values": _decode_from_sdk(runtime_data, model_name, external_model_name),
-    }
+        selected = {
+            key: runtime_data.get(key)
+            for key in (
+                "timestamp",
+                # PV
+                "vpv1",
+                "ipv1",
+                "ppv1",
+                "vpv2",
+                "ipv2",
+                "ppv2",
+                "ppv",
+                # Battery
+                "vbattery1",
+                "ibattery1",
+                "pbattery1",
+                # Meter active power
+                "pgrid",
+                "pgrid1",
+                "pgrid2",
+                "pgrid3",
+                "active_power",
+                "meter_active_power1",
+                "meter_active_power2",
+                "meter_active_power3",
+                "meter_active_power_total",
+                # Meter reactive power (SDK keys from et.py: Reactive/Reactive4 sensors)
+                "reactive_power",
+                "reactive_power_total",
+                "reactive_power1",
+                "reactive_power2",
+                "reactive_power3",
+                "meter_reactive_power1",
+                "meter_reactive_power2",
+                "meter_reactive_power3",
+                "meter_reactive_power_total",
+                # Meter apparent power (SDK keys from et.py: Apparent/Apparent4 sensors)
+                "apparent_power",
+                "apparent_power1",
+                "apparent_power2",
+                "apparent_power3",
+                "meter_apparent_power1",
+                "meter_apparent_power2",
+                "meter_apparent_power3",
+                "meter_apparent_power_total",
+                # Inverter PF and temperatures
+                "power_factor",
+                "temperature_air",
+                "temperature_module",
+                "temperature",
+                # Meter voltage
+                "vgrid",
+                "vgrid1",
+                "vgrid2",
+                "vgrid3",
+                "fgrid",
+                "fgrid2",
+                "fgrid3",
+                "vac1",
+                "vac2",
+                "vac3",
+                # Meter diagnostic/status and aliases
+                "meter_test_status",
+                "meter_comm_status",
+                "meter_type",
+                "meter_sw_version",
+                "meter_power_factor1",
+                "meter_power_factor2",
+                "meter_power_factor3",
+                "meter_power_factor",
+                "meter_freq",
+                "meter_voltage1",
+                "meter_voltage2",
+                "meter_voltage3",
+                "meter_current1",
+                "meter_current2",
+                "meter_current3",
+                # Meter current
+                "igrid",
+                "igrid1",
+                "igrid2",
+                "igrid3",
+                "iac1",
+                "iac2",
+                "iac3",
+                # Meter energy totals (Energy8 at 36104/36120 overwrite f32 at 36015/36017 in SDK dict)
+                "meter_e_total_exp",
+                "meter_e_total_imp",
+                # Meter energy per-phase export (Energy8 at 36092/36096/36100)
+                "meter_e_total_exp1",
+                "meter_e_total_exp2",
+                "meter_e_total_exp3",
+                # Meter energy per-phase import (Energy8 at 36108/36112/36116)
+                "meter_e_total_imp1",
+                "meter_e_total_imp2",
+                "meter_e_total_imp3",
+            )
+            if key in runtime_data
+        }
+
+        return {
+            "target": {"host": host, "port": port, "unit_id": unit_id, "family": family},
+            "source": "goodwe-sdk",
+            "sdk_sensor_count": len(runtime_data),
+            "sdk_selected_values": selected,
+            "decoded_key_values": _decode_from_sdk(runtime_data, model_name, external_model_name),
+        }
+    finally:
+        # Explicitly close the socket after finishing all queries in this poll.
+        await inverter._protocol.close()
 
 
 def main() -> None:

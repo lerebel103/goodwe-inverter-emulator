@@ -40,7 +40,15 @@ class _CircuitBreaker:
             logger.info("Closing Modbus circuit breaker: fresh upstream data")
 
     def mark_failure(self) -> None:
-        self._open_circuit("upstream read failure")
+        stale_age = self.stale_age_seconds()
+        if stale_age is None:
+            # No successful snapshot has been published yet, so remain open.
+            self._open_circuit("upstream read failure")
+            return
+
+        # Intermittent upstream failures are tolerated while cached data is fresh.
+        if stale_age > self._timeout:
+            self._open_circuit("upstream read failure")
 
     def stale_age_seconds(self) -> float | None:
         with self._lock:

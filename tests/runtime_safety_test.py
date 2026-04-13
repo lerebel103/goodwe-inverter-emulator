@@ -185,6 +185,22 @@ def test_modbus_server_opens_circuit_after_data_age_exceeds_five_seconds(monkeyp
     assert result == ExcCodes.DEVICE_BUSY
 
 
+def test_upstream_failure_does_not_open_circuit_while_data_is_fresh(monkeypatch):
+    server = GoodweModbusServer("127.0.0.1", 60001, 60002, 247, data_timeout=5.0)
+    server.mark_data_received()
+    server.update_holding_registers({36052: 2294})
+
+    stale_start = 3000.0
+
+    monkeypatch.setattr("app.goodwe.server.time.monotonic", lambda: stale_start)
+    server.mark_data_received()
+
+    monkeypatch.setattr("app.goodwe.server.time.monotonic", lambda: stale_start + 2.0)
+    server.mark_upstream_failed()
+    result = server._store.getValues(3, 36052, count=1)
+    assert result == [2294]
+
+
 def test_default_goodwe_data_timeout_is_five_seconds():
     cfg = AppConfig()
     assert cfg.goodwe_emulator.data_timeout == pytest.approx(5.0)
