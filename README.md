@@ -153,17 +153,16 @@ For reference, the following addresses are requested by the HCA G2:
 
 | Address | Count | Observed TX payload (sample/range) | Notes | Decoded example |
 |---|---:|---|---|---|
-| 35060 | 16 | `[16965, 12594, 12873, 11822, 11825, 12090, 11821, 12625, 11825, 12098, 12098, ...]` | External Model Name (string block) | `EM540+Fronius+Victron` |
-| 35011 | 5 | `[18263, 12592, 19245, 17748, 8224]` | Model name string block | `GW10K-ET` |
+| 35060 | 16 | `[18263, 12592, 19245, 17748, 8224, 8224, ...]` | External Model Name (string block) | `GW10K-ET` |
 | 35100 | 1 | `[6660]` | RTC packed year/month | `0x1A04` => year `26`, month `4` |
-| 35137 | 2 | `[0, 5012] .. [0, 5016]` | Signed 32-bit total inverter/PV watts | `5012..5016 W` |
-| 37007 | 1 | `[670] .. [667]` | Battery current (`0.1 A` scale) | `67.0..66.7 A` |
+| 35137 | 2 | `[0, 2652] .. [0, 2673]` | Signed 32-bit total inverter/PV watts | `2652..2673 W` |
+| 37007 | 1 | `[65535]` | Battery current (`0.1 A`, signed i16) | `-0.1 A` |
 | 39005 | 1 | `[0]` | BMS2 SOC (secondary battery channel) | `0 %` |
-| 35180 | 1 | `[536]` | Battery voltage (`0.1 V` scale) | `53.6 V` |
-| 47906 | 1 | `[0]` | BMS battery voltage (RW BMS path) | `0.0 V` (historical sample) |
+| 35180 | 1 | `[5480]` | Battery voltage (`0.1 V` scale) | `548.0 V` |
+| 47906 | 1 | `[5480]` | BMS battery voltage (`0.1 V` scale, RW BMS path) | `548.0 V` |
 | 35262 | 1 | `[0]` | Battery2 voltage (`0.1 V`, secondary channel) | `0.0 V` |
 | 47924 | 1 | `[0]` | BMS battery2 voltage (RW BMS path) | `0.0 V` |
-| 36025 | 2 | `[0, 32] .. [0, 56]` | Signed 32-bit meter total active power | `32..56 W` |
-| 36055 | 3 | `[22, 20, 34] .. [22, 20, 35]` | Meter currents L1/L2/L3 (`0.1 A`) | `2.2 A`, `2.0 A`, `3.4..3.5 A` |
-| 35105 | 14 | `[0, 1179, 2784, 145, 0, 4047..4050, 0, 0, 0, 0, 0, 0, 0, 0]` | PV detail/runtime block | e.g. PV1 `117.9 V`, `278.4 A`, `145 W`; PV2 power `4047..4050 W` |
+| 36025 | 2 | `[65535, 64045] .. [65535, 64075]` | Signed 32-bit meter total active power | `-1491..-1461 W` |
+| 36055 | 3 | `[33, 29, 20] .. [34, 29, 21]` | Meter currents L1/L2/L3 (`0.1 A`) | `3.3..3.4 A`, `2.8..2.9 A`, `2.0..2.1 A` |
+| 35105 | 14 | `[0, 50, 3126..3129, 87..88, 0, 2731..2763, 0, 0, 0, 0, 0, 0, 0, 0]` | PV detail/runtime block | e.g. PV1 power `50 W`; PV2 `312.6..312.9 V`, `8.7..8.8 A`, `2731..2763 W` |
 
