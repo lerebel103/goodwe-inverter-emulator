@@ -29,6 +29,20 @@ def _as_int(value, default: int = 0) -> int:
         return default
 
 
+def _split_total_weighted(total: int, weights: tuple[float, float, float]) -> tuple[int, int, int]:
+    w1, w2, w3 = (max(0.0, float(w)) for w in weights)
+    s = w1 + w2 + w3
+    if s <= 0.0:
+        base = int(total / 3)
+        rem = total - (base * 3)
+        return base, base, base + rem
+
+    p1 = int(total * (w1 / s))
+    p2 = int(total * (w2 / s))
+    p3 = total - p1 - p2
+    return p1, p2, p3
+
+
 def _decode_from_sdk(data: dict[str, object], model_name: str | None) -> dict[str, object]:
     ts = _pick(data, "timestamp", "timestamp_utc")
     if isinstance(ts, datetime):
@@ -69,10 +83,66 @@ def _decode_from_sdk(data: dict[str, object], model_name: str | None) -> dict[st
     inv_l2_apparent = _pick(data, "apparent_power2")
     inv_l3_apparent = _pick(data, "apparent_power3")
     inv_total_apparent = _pick(data, "apparent_power")
+    inv_power_factor = _pick(data, "power_factor")
+    inv_temp_air = _pick(data, "temperature_air")
+    inv_temp_module = _pick(data, "temperature_module")
+    inv_temp_radiator = _pick(data, "temperature")
 
     meter_l1_active = _pick(data, "meter_active_power1")
     meter_l2_active = _pick(data, "meter_active_power2")
     meter_l3_active = _pick(data, "meter_active_power3")
+    meter_freq = _pick(data, "meter_freq")
+    meter_pf_l1 = _pick(data, "meter_power_factor1")
+    meter_pf_l2 = _pick(data, "meter_power_factor2")
+    meter_pf_l3 = _pick(data, "meter_power_factor3")
+    meter_pf_total = _pick(data, "meter_power_factor")
+    meter_v1 = _pick(data, "meter_voltage1")
+    meter_v2 = _pick(data, "meter_voltage2")
+    meter_v3 = _pick(data, "meter_voltage3")
+    meter_i1 = _pick(data, "meter_current1")
+    meter_i2 = _pick(data, "meter_current2")
+    meter_i3 = _pick(data, "meter_current3")
+
+    # Some inverter/SDK combinations expose only total VA/VAr while phase channels
+    # can be missing/zero. Reconstruct per-phase values from total using active
+    # phase magnitudes as weights so UI output remains physically plausible.
+    active_weights = (
+        abs(_as_float(inv_l1_active, 0.0)),
+        abs(_as_float(inv_l2_active, 0.0)),
+        abs(_as_float(inv_l3_active, 0.0)),
+    )
+
+    inv_l1_apparent_i = _as_int(inv_l1_apparent) if inv_l1_apparent is not None else None
+    inv_l2_apparent_i = _as_int(inv_l2_apparent) if inv_l2_apparent is not None else None
+    inv_l3_apparent_i = _as_int(inv_l3_apparent) if inv_l3_apparent is not None else None
+    inv_total_apparent_i = _as_int(inv_total_apparent) if inv_total_apparent is not None else None
+
+    if (
+        inv_total_apparent_i not in (None, 0)
+        and (
+            (inv_l2_apparent_i in (None, 0) and inv_l3_apparent_i in (None, 0))
+            or (inv_l1_apparent_i == inv_l2_apparent_i == inv_l3_apparent_i)
+        )
+    ):
+        inv_l1_apparent_i, inv_l2_apparent_i, inv_l3_apparent_i = _split_total_weighted(
+            inv_total_apparent_i, active_weights
+        )
+
+    inv_l1_reactive_i = _as_int(inv_l1_reactive) if inv_l1_reactive is not None else None
+    inv_l2_reactive_i = _as_int(inv_l2_reactive) if inv_l2_reactive is not None else None
+    inv_l3_reactive_i = _as_int(inv_l3_reactive) if inv_l3_reactive is not None else None
+    inv_total_reactive_i = _as_int(inv_total_reactive) if inv_total_reactive is not None else None
+
+    if (
+        inv_total_reactive_i not in (None, 0)
+        and (
+            (inv_l2_reactive_i in (None, 0) and inv_l3_reactive_i in (None, 0))
+            or (inv_l1_reactive_i == inv_l2_reactive_i == inv_l3_reactive_i)
+        )
+    ):
+        inv_l1_reactive_i, inv_l2_reactive_i, inv_l3_reactive_i = _split_total_weighted(
+            inv_total_reactive_i, active_weights
+        )
 
     l1_reactive = _pick(data, "meter_reactive_power1")
     l2_reactive = _pick(data, "meter_reactive_power2")
@@ -118,16 +188,16 @@ def _decode_from_sdk(data: dict[str, object], model_name: str | None) -> dict[st
                 "total": _as_int(_pick(data, "active_power")),
             },
             "reactive_power_var": {
-                "l1": _as_int(inv_l1_reactive) if inv_l1_reactive is not None else None,
-                "l2": _as_int(inv_l2_reactive) if inv_l2_reactive is not None else None,
-                "l3": _as_int(inv_l3_reactive) if inv_l3_reactive is not None else None,
-                "total": _as_int(inv_total_reactive) if inv_total_reactive is not None else None,
+                "l1": inv_l1_reactive_i,
+                "l2": inv_l2_reactive_i,
+                "l3": inv_l3_reactive_i,
+                "total": inv_total_reactive_i,
             },
             "apparent_power_va": {
-                "l1": _as_int(inv_l1_apparent) if inv_l1_apparent is not None else None,
-                "l2": _as_int(inv_l2_apparent) if inv_l2_apparent is not None else None,
-                "l3": _as_int(inv_l3_apparent) if inv_l3_apparent is not None else None,
-                "total": _as_int(inv_total_apparent) if inv_total_apparent is not None else None,
+                "l1": inv_l1_apparent_i,
+                "l2": inv_l2_apparent_i,
+                "l3": inv_l3_apparent_i,
+                "total": inv_total_apparent_i,
             },
             "voltage_v": {
                 "l1": _as_float(l1_voltage) if l1_voltage is not None else None,
@@ -144,8 +214,20 @@ def _decode_from_sdk(data: dict[str, object], model_name: str | None) -> dict[st
                 "l2": _as_float(l2_frequency) if l2_frequency is not None else None,
                 "l3": _as_float(l3_frequency) if l3_frequency is not None else None,
             },
+            "power_factor": _as_float(inv_power_factor) if inv_power_factor is not None else None,
+            "temperature_c": {
+                "air": _as_float(inv_temp_air) if inv_temp_air is not None else None,
+                "module": _as_float(inv_temp_module) if inv_temp_module is not None else None,
+                "radiator": _as_float(inv_temp_radiator) if inv_temp_radiator is not None else None,
+            },
         },
         "meter": {
+            "status": {
+                "test_status": _as_int(_pick(data, "meter_test_status")) if _pick(data, "meter_test_status") is not None else None,
+                "comm_status": _as_int(_pick(data, "meter_comm_status")) if _pick(data, "meter_comm_status") is not None else None,
+                "type": _as_int(_pick(data, "meter_type")) if _pick(data, "meter_type") is not None else None,
+                "sw_version": _as_int(_pick(data, "meter_sw_version")) if _pick(data, "meter_sw_version") is not None else None,
+            },
             "active_power_w": {
                 "l1": _as_int(meter_l1_active) if meter_l1_active is not None else None,
                 "l2": _as_int(meter_l2_active) if meter_l2_active is not None else None,
@@ -176,6 +258,23 @@ def _decode_from_sdk(data: dict[str, object], model_name: str | None) -> dict[st
                 "import_l2": _as_float(_pick(data, "meter_e_total_imp2")),
                 "import_l3": _as_float(_pick(data, "meter_e_total_imp3")),
             },
+            "power_factor": {
+                "l1": _as_float(meter_pf_l1) if meter_pf_l1 is not None else None,
+                "l2": _as_float(meter_pf_l2) if meter_pf_l2 is not None else None,
+                "l3": _as_float(meter_pf_l3) if meter_pf_l3 is not None else None,
+                "total": _as_float(meter_pf_total) if meter_pf_total is not None else None,
+            },
+            "voltage_v": {
+                "l1": _as_float(meter_v1) if meter_v1 is not None else None,
+                "l2": _as_float(meter_v2) if meter_v2 is not None else None,
+                "l3": _as_float(meter_v3) if meter_v3 is not None else None,
+            },
+            "current_a": {
+                "l1": _as_float(meter_i1) if meter_i1 is not None else None,
+                "l2": _as_float(meter_i2) if meter_i2 is not None else None,
+                "l3": _as_float(meter_i3) if meter_i3 is not None else None,
+            },
+            "frequency_hz": _as_float(meter_freq) if meter_freq is not None else None,
         },
         # Not exposed through the high-level SDK sensor API.
         "unknown_registers": {
@@ -198,6 +297,11 @@ async def poll_once(host: str, port: int, unit_id: int, timeout: float, family: 
     )
     runtime_data = await inverter.read_runtime_data()
     model_name = str(getattr(inverter, "model_name", "") or "")
+
+    try:
+        runtime_data["power_factor"] = await inverter.read_setting("power_factor")
+    except Exception:
+        runtime_data["power_factor"] = runtime_data.get("power_factor")
 
     selected = {
         key: runtime_data.get(key)
@@ -244,6 +348,11 @@ async def poll_once(host: str, port: int, unit_id: int, timeout: float, family: 
             "meter_apparent_power2",
             "meter_apparent_power3",
             "meter_apparent_power_total",
+            # Inverter PF and temperatures
+            "power_factor",
+            "temperature_air",
+            "temperature_module",
+            "temperature",
             # Meter voltage
             "vgrid",
             "vgrid1",
@@ -255,6 +364,22 @@ async def poll_once(host: str, port: int, unit_id: int, timeout: float, family: 
             "vac1",
             "vac2",
             "vac3",
+            # Meter diagnostic/status and aliases
+            "meter_test_status",
+            "meter_comm_status",
+            "meter_type",
+            "meter_sw_version",
+            "meter_power_factor1",
+            "meter_power_factor2",
+            "meter_power_factor3",
+            "meter_power_factor",
+            "meter_freq",
+            "meter_voltage1",
+            "meter_voltage2",
+            "meter_voltage3",
+            "meter_current1",
+            "meter_current2",
+            "meter_current3",
             # Meter current
             "igrid",
             "igrid1",

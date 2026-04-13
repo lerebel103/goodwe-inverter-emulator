@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import struct
+
 import pytest
 
 from app.config import FroniusConfig
@@ -176,27 +178,27 @@ class _FakeModel103Client:
             40010: 2398,
             40011: 2403,
             40012: (-1) & 0xFFFF,
+            # W / WphA/B/C with W_SF=0
+            40013: 1234,
+            40014: 400,
+            40015: 420,
+            40016: 414,
+            40017: 0,
             # Frequency with Hz_SF=-2
-            40013: 5000,
-            40014: (-2) & 0xFFFF,
-            # W / W_SF -> 1234 W
-            40016: 1234,
-            40017: 400,
-            40018: 420,
-            40019: 414,
-            40020: 0,
-            # VA / VA_SF -> 1310 VA
-            40023: 1310,
-            40024: 430,
-            40025: 440,
-            40026: 440,
-            40027: 0,
+            40018: 5000,
+            40019: (-2) & 0xFFFF,
+            # VA / VAphA/B/C with VA_SF=0
+            40020: 1310,
+            40021: 430,
+            40022: 440,
+            40023: 440,
+            40024: 0,
             # VAr / VAr_SF -> -220 var
-            40028: (-220) & 0xFFFF,
-            40029: (-70) & 0xFFFF,
-            40030: (-80) & 0xFFFF,
-            40031: (-70) & 0xFFFF,
-            40032: 0,
+            40025: (-220) & 0xFFFF,
+            40026: (-70) & 0xFFFF,
+            40027: (-80) & 0xFFFF,
+            40028: (-70) & 0xFFFF,
+            40029: 0,
             # End marker
             40054: 0xFFFF,
             40055: 0,
@@ -225,11 +227,70 @@ class _FakeModel103NotImplementedClient(_FakeModel103Client):
         self._map[40009] = 0xFFFF
         self._map[40010] = 0xFFFF
         self._map[40011] = 0xFFFF
-        self._map[40013] = 0xFFFF
+        self._map[40018] = 0xFFFF
+        self._map[40020] = 0xFFFF
+        self._map[40021] = 0xFFFF
+        self._map[40022] = 0xFFFF
         self._map[40023] = 0xFFFF
-        self._map[40024] = 0xFFFF
-        self._map[40025] = 0xFFFF
-        self._map[40026] = 0xFFFF
+
+
+def _f32_regs(value: float) -> tuple[int, int]:
+    packed = struct.pack(">f", value)
+    hi, lo = struct.unpack(">HH", packed)
+    return hi, lo
+
+
+class _FakeModel113Client:
+    def __init__(self, host: str, port: int, timeout: float, **kwargs):
+        self.host = host
+        self.port = port
+        self.timeout = timeout
+        self._map: dict[int, int] = {
+            # SunSpec signature
+            40000: 0x5375,
+            40001: 0x6E53,
+            # Inverter model 113 header (three phase float)
+            40002: 113,
+            40003: 60,
+        }
+
+        # Model 113 data starts at 40004. Populate only fields we read.
+        def set_f32(reg_index: int, value: float) -> None:
+            hi, lo = _f32_regs(value)
+            addr = 40004 + reg_index
+            self._map[addr] = hi
+            self._map[addr + 1] = lo
+
+        set_f32(2, 12.3)  # AphA
+        set_f32(4, 9.8)  # AphB
+        set_f32(6, 10.5)  # AphC
+        set_f32(14, 240.1)  # PhVphA
+        set_f32(16, 239.8)  # PhVphB
+        set_f32(18, 240.3)  # PhVphC
+        set_f32(20, 1234.0)  # W
+        set_f32(22, 50.0)  # Hz
+        set_f32(24, 1310.0)  # VA
+        set_f32(26, -220.0)  # VAr
+        set_f32(28, 0.94)  # PF
+        set_f32(38, 31.5)  # TmpCab
+        set_f32(40, 45.5)  # TmpSnk
+        set_f32(42, 40.0)  # TmpTrns
+
+        # End marker
+        self._map[40066] = 0xFFFF
+        self._map[40067] = 0
+
+    def connect(self) -> bool:
+        return True
+
+    def read_holding_registers(self, address: int, count: int, device_id: int):
+        regs = []
+        for i in range(count):
+            regs.append(self._map.get(address + i, 0))
+        return _OkMultiResult(regs)
+
+    def close(self) -> None:
+        return None
 
 
 def test_fronius_client_returns_channel_data_from_optional_registers(monkeypatch):
@@ -367,3 +428,44 @@ def test_fronius_client_handles_not_implemented_sentinels_for_model_103_scalars(
     assert data["inverter_apparent_power_l1_va"] == 0
     assert data["inverter_apparent_power_l2_va"] == 0
     assert data["inverter_apparent_power_l3_va"] == 0
+
+
+def test_fronius_client_reads_inverter_ac_power_from_sunspec_model_113(monkeypatch):
+    monkeypatch.setattr(
+        fronius_module,
+        "ModbusTcpClient",
+        lambda host, port, timeout, **kwargs: _FakeModel113Client(host, port, timeout, **kwargs),
+    )
+
+    cfg = FroniusConfig(host="127.0.0.1", port=502, slave_id=1, sunspec_model_160_enabled=False)
+    data = FroniusClient(cfg).read()
+
+    assert data["inverter_active_power_w"] == 1234
+    assert data["inverter_power_l1_w"] == 465
+    assert data["inverter_power_l2_w"] == 370
+    assert data["inverter_power_l3_w"] == 399
+    assert data["inverter_apparent_power_va"] == 1310
+    assert data["inverter_apparent_power_l1_va"] == 494
+    assert data["inverter_apparent_power_l2_va"] == 393
+    assert data["inverter_apparent_power_l3_va"] == 423
+    assert data["inverter_reactive_power_var"] == -220
+    assert data["inverter_reactive_power_l1_var"] == -83
+    assert data["inverter_reactive_power_l2_var"] == -66
+    assert data["inverter_reactive_power_l3_var"] == -71
+    assert data["inverter_power_factor"] == pytest.approx(0.94, rel=1e-6)
+    assert data["inverter_temperature_air_c"] == pytest.approx(31.5, rel=1e-6)
+    assert data["inverter_temperature_radiator_c"] == pytest.approx(45.5, rel=1e-6)
+    assert data["inverter_temperature_module_c"] == pytest.approx(40.0, rel=1e-6)
+    assert data["inverter_voltage_l1_v"] == pytest.approx(240.1, rel=1e-6)
+    assert data["inverter_voltage_l2_v"] == pytest.approx(239.8, rel=1e-6)
+    assert data["inverter_voltage_l3_v"] == pytest.approx(240.3, rel=1e-6)
+    assert data["inverter_current_l1_a"] == pytest.approx(12.3, rel=1e-6)
+    assert data["inverter_current_l2_a"] == pytest.approx(9.8, rel=1e-6)
+    assert data["inverter_current_l3_a"] == pytest.approx(10.5, rel=1e-6)
+    assert data["inverter_frequency_hz"] == pytest.approx(50.0, rel=1e-6)
+
+
+def test_scale_helpers_reject_out_of_range_scale_factor():
+    regs = [1234, 32767]
+    assert fronius_module._read_scaled_from_model_i16(regs, 0, 1) == 0.0
+    assert fronius_module._read_scaled_from_model_u16(regs, 0, 1) == 0.0

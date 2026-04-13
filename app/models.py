@@ -51,6 +51,10 @@ class Snapshot:
     inverter_apparent_power_l1_va: int = 0
     inverter_apparent_power_l2_va: int = 0
     inverter_apparent_power_l3_va: int = 0
+    inverter_power_factor: float = 1.0
+    inverter_temperature_air_c: float = 0.0
+    inverter_temperature_module_c: float = 0.0
+    inverter_temperature_radiator_c: float = 0.0
     pv_power_w: int = 0
     pv1_voltage_v: float = 0.0
     pv1_current_a: float = 0.0

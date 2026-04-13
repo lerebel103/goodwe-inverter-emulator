@@ -33,6 +33,16 @@ def test_register_map_contains_expanded_meter_fields():
         inverter_power_l1_w=140,
         inverter_power_l2_w=150,
         inverter_power_l3_w=160,
+        inverter_reactive_power_l1_var=-40,
+        inverter_reactive_power_l2_var=-45,
+        inverter_reactive_power_l3_var=-50,
+        inverter_apparent_power_l1_va=320,
+        inverter_apparent_power_l2_va=330,
+        inverter_apparent_power_l3_va=340,
+        inverter_power_factor=0.95,
+        inverter_temperature_air_c=28.4,
+        inverter_temperature_module_c=35.1,
+        inverter_temperature_radiator_c=42.7,
         meter_power_l1_w=300,
         meter_power_l2_w=300,
         meter_power_l3_w=300,
@@ -86,6 +96,24 @@ def test_register_map_contains_expanded_meter_fields():
     assert regs[35133] == 4997
     assert regs[35134] == 0
     assert regs[35135] == 160
+    assert regs[35137] == 0
+    assert regs[35138] == 450
+    assert regs[35353] == 0xFFFF
+    assert regs[35354] == 0xFFD8
+    assert regs[35355] == 0xFFFF
+    assert regs[35356] == 0xFFD3
+    assert regs[35357] == 0xFFFF
+    assert regs[35358] == 0xFFCE
+    assert regs[35359] == 0
+    assert regs[35360] == 320
+    assert regs[35361] == 0
+    assert regs[35362] == 330
+    assert regs[35363] == 0
+    assert regs[35364] == 340
+    assert regs[35174] == 284
+    assert regs[35175] == 351
+    assert regs[35176] == 427
+    assert regs[45482] == 95
     assert regs[36025] == 0
     assert regs[36026] == 900
     assert regs[36027] == 0

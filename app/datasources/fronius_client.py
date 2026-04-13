@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import math
+import struct
 
 from pymodbus import FramerType
 from pymodbus.client import ModbusTcpClient
@@ -29,9 +31,14 @@ LEGACY_CHANNEL_REGISTERS = [
 
 SUNSPEC_BASE_REGISTER = 40000
 SUNSPEC_MODEL_101_ID = 101
+SUNSPEC_MODEL_111_ID = 111
 SUNSPEC_MODEL_103_ID = 103
+SUNSPEC_MODEL_113_ID = 113
 SUNSPEC_MODEL_160_ID = 160
 SUNSPEC_MAX_MODELS_TO_SCAN = 64
+SUNSPEC_MIN_SCALE_FACTOR = -6
+SUNSPEC_MAX_SCALE_FACTOR = 6
+_LOGGED_INVERTER_MODELS: set[int] = set()
 
 
 class FroniusClient:
@@ -68,6 +75,11 @@ class FroniusClient:
         string_count = _effective_string_count(self._cfg)
         model_index = self._get_model_index(client)
         inverter_ac = _read_sunspec_inverter_ac_power(client, self._cfg.slave_id, model_index)
+        if not inverter_ac and model_index:
+            logger.debug(
+                "Fronius SunSpec model 101/103 not found in model table (available models: %s)",
+                sorted(model_index.keys()),
+            )
 
         model_data: dict[str, float | int] = {}
         if self._cfg.sunspec_model_160_enabled:
@@ -166,7 +178,9 @@ class FroniusClient:
         }
 
     def _get_model_index(self, client: ModbusTcpClient) -> dict[int, tuple[int, int]]:
-        if self._model_index_cache is not None:
+        # Do not permanently cache an empty index; upstream SunSpec tables may be
+        # temporarily unavailable during startup and become readable later.
+        if self._model_index_cache:
             return self._model_index_cache
 
         self._model_index_cache = _scan_sunspec_model_index(client, self._cfg.slave_id)
@@ -188,7 +202,13 @@ def _read_scaled_from_model_i16(regs: list[int], value_index: int, sf_index: int
     if raw == -32768 or sf == -32768:
         return 0.0
 
-    return float(raw * (10**sf))
+    if sf < SUNSPEC_MIN_SCALE_FACTOR or sf > SUNSPEC_MAX_SCALE_FACTOR:
+        return 0.0
+
+    try:
+        return float(raw * (10**sf))
+    except OverflowError:
+        return 0.0
 
 
 def _read_scaled_from_model_u16(regs: list[int], value_index: int, sf_index: int) -> float:
@@ -202,7 +222,13 @@ def _read_scaled_from_model_u16(regs: list[int], value_index: int, sf_index: int
     if raw_u16 == 0xFFFF or sf == -32768:
         return 0.0
 
-    return float(raw_u16 * (10**sf))
+    if sf < SUNSPEC_MIN_SCALE_FACTOR or sf > SUNSPEC_MAX_SCALE_FACTOR:
+        return 0.0
+
+    try:
+        return float(raw_u16 * (10**sf))
+    except OverflowError:
+        return 0.0
 
 
 def _read_scaled_i16(client: ModbusTcpClient, value_register: int, sf_register: int, slave_id: int) -> float:
@@ -216,7 +242,13 @@ def _read_scaled_i16(client: ModbusTcpClient, value_register: int, sf_register: 
 
     raw = _to_i16(rr.registers[0])
     sf = _to_i16(sf_rr.registers[0])
-    return float(raw * (10**sf))
+    if sf < SUNSPEC_MIN_SCALE_FACTOR or sf > SUNSPEC_MAX_SCALE_FACTOR:
+        return 0.0
+
+    try:
+        return float(raw * (10**sf))
+    except OverflowError:
+        return 0.0
 
 
 def _read_scaled_i16_from_block(
@@ -233,7 +265,13 @@ def _read_scaled_i16_from_block(
 
     raw = _to_i16(block[value_idx])
     sf = _to_i16(block[sf_idx])
-    return float(raw * (10**sf))
+    if sf < SUNSPEC_MIN_SCALE_FACTOR or sf > SUNSPEC_MAX_SCALE_FACTOR:
+        return 0.0
+
+    try:
+        return float(raw * (10**sf))
+    except OverflowError:
+        return 0.0
 
 
 def _read_sunspec_inverter_ac_power(
@@ -241,15 +279,74 @@ def _read_sunspec_inverter_ac_power(
     slave_id: int,
     model_index: dict[int, tuple[int, int]] | None = None,
 ) -> dict[str, int]:
-    # Prefer 3-phase inverter model 103, then fallback to single-phase 101.
+    # Prefer 3-phase inverter models (113/103), then fallback to single-phase (111/101).
     if model_index is None:
         model_index = _scan_sunspec_model_index(client, slave_id)
+
+    model_113 = model_index.get(SUNSPEC_MODEL_113_ID)
+    if model_113 is not None:
+        model_start, model_len = model_113
+        model_id = SUNSPEC_MODEL_113_ID
+        _log_inverter_model_once(model_id, model_start, model_len)
+        regs = _read_register_block(client, model_start, model_len, slave_id)
+        if regs:
+            current_l1 = _read_f32_from_model(regs, value_index=2)
+            current_l2 = _read_f32_from_model(regs, value_index=4)
+            current_l3 = _read_f32_from_model(regs, value_index=6)
+            voltage_l1 = _read_f32_from_model(regs, value_index=14)
+            voltage_l2 = _read_f32_from_model(regs, value_index=16)
+            voltage_l3 = _read_f32_from_model(regs, value_index=18)
+            active_total = int(_read_f32_from_model(regs, value_index=20))
+            apparent_total = int(_read_f32_from_model(regs, value_index=24))
+            reactive_total = int(_read_f32_from_model(regs, value_index=26))
+            power_factor = _derive_power_factor(active_total, apparent_total, _read_f32_from_model(regs, value_index=28))
+            temperature_air = _read_f32_from_model(regs, value_index=38)
+            temperature_radiator = _read_f32_from_model(regs, value_index=40)
+            temperature_module = _read_f32_from_model(regs, value_index=42)
+            phase_weights = [
+                max(0.0, current_l1 * voltage_l1),
+                max(0.0, current_l2 * voltage_l2),
+                max(0.0, current_l3 * voltage_l3),
+            ]
+            active_l1, active_l2, active_l3 = _split_total_by_weights(active_total, phase_weights)
+            apparent_l1, apparent_l2, apparent_l3 = _split_total_by_weights(apparent_total, phase_weights)
+            reactive_l1, reactive_l2, reactive_l3 = _split_total_by_weights(reactive_total, phase_weights)
+            return {
+                "inverter_current_l1_a": current_l1,
+                "inverter_current_l2_a": current_l2,
+                "inverter_current_l3_a": current_l3,
+                "inverter_voltage_l1_v": voltage_l1,
+                "inverter_voltage_l2_v": voltage_l2,
+                "inverter_voltage_l3_v": voltage_l3,
+                "inverter_frequency_hz": _read_f32_from_model(regs, value_index=22),
+                "inverter_active_power_w": active_total,
+                "inverter_power_l1_w": active_l1,
+                "inverter_power_l2_w": active_l2,
+                "inverter_power_l3_w": active_l3,
+                "inverter_apparent_power_va": apparent_total,
+                "inverter_apparent_power_l1_va": apparent_l1,
+                "inverter_apparent_power_l2_va": apparent_l2,
+                "inverter_apparent_power_l3_va": apparent_l3,
+                "inverter_reactive_power_var": reactive_total,
+                "inverter_reactive_power_l1_var": reactive_l1,
+                "inverter_reactive_power_l2_var": reactive_l2,
+                "inverter_reactive_power_l3_var": reactive_l3,
+                "inverter_power_factor": power_factor,
+                "inverter_temperature_air_c": temperature_air,
+                "inverter_temperature_module_c": temperature_module,
+                "inverter_temperature_radiator_c": temperature_radiator,
+            }
 
     model_103 = model_index.get(SUNSPEC_MODEL_103_ID)
     if model_103 is not None:
         model_start, model_len = model_103
+        model_id = SUNSPEC_MODEL_103_ID
+        _log_inverter_model_once(model_id, model_start, model_len)
         regs = _read_register_block(client, model_start, model_len, slave_id)
         if regs:
+            apparent_total = int(_read_scaled_from_model_u16(regs, value_index=16, sf_index=20))
+            active_total = int(_read_scaled_from_model_i16(regs, value_index=9, sf_index=13))
+            reactive_total = int(_read_scaled_from_model_i16(regs, value_index=21, sf_index=25))
             return {
                 "inverter_current_l1_a": _read_scaled_from_model_u16(regs, value_index=1, sf_index=4),
                 "inverter_current_l2_a": _read_scaled_from_model_u16(regs, value_index=2, sf_index=4),
@@ -257,36 +354,83 @@ def _read_sunspec_inverter_ac_power(
                 "inverter_voltage_l1_v": _read_scaled_from_model_u16(regs, value_index=5, sf_index=8),
                 "inverter_voltage_l2_v": _read_scaled_from_model_u16(regs, value_index=6, sf_index=8),
                 "inverter_voltage_l3_v": _read_scaled_from_model_u16(regs, value_index=7, sf_index=8),
-                "inverter_frequency_hz": _read_scaled_from_model_u16(regs, value_index=9, sf_index=10),
-                "inverter_active_power_w": int(_read_scaled_from_model_i16(regs, value_index=12, sf_index=16)),
-                "inverter_power_l1_w": int(_read_scaled_from_model_i16(regs, value_index=13, sf_index=16)),
-                "inverter_power_l2_w": int(_read_scaled_from_model_i16(regs, value_index=14, sf_index=16)),
-                "inverter_power_l3_w": int(_read_scaled_from_model_i16(regs, value_index=15, sf_index=16)),
-                "inverter_apparent_power_va": int(_read_scaled_from_model_u16(regs, value_index=19, sf_index=23)),
-                "inverter_apparent_power_l1_va": int(_read_scaled_from_model_u16(regs, value_index=20, sf_index=23)),
-                "inverter_apparent_power_l2_va": int(_read_scaled_from_model_u16(regs, value_index=21, sf_index=23)),
-                "inverter_apparent_power_l3_va": int(_read_scaled_from_model_u16(regs, value_index=22, sf_index=23)),
-                "inverter_reactive_power_var": int(_read_scaled_from_model_i16(regs, value_index=24, sf_index=28)),
-                "inverter_reactive_power_l1_var": int(_read_scaled_from_model_i16(regs, value_index=25, sf_index=28)),
-                "inverter_reactive_power_l2_var": int(_read_scaled_from_model_i16(regs, value_index=26, sf_index=28)),
-                "inverter_reactive_power_l3_var": int(_read_scaled_from_model_i16(regs, value_index=27, sf_index=28)),
+                "inverter_frequency_hz": _read_scaled_from_model_u16(regs, value_index=14, sf_index=15),
+                "inverter_active_power_w": active_total,
+                "inverter_power_l1_w": int(_read_scaled_from_model_i16(regs, value_index=10, sf_index=13)),
+                "inverter_power_l2_w": int(_read_scaled_from_model_i16(regs, value_index=11, sf_index=13)),
+                "inverter_power_l3_w": int(_read_scaled_from_model_i16(regs, value_index=12, sf_index=13)),
+                "inverter_apparent_power_va": apparent_total,
+                "inverter_apparent_power_l1_va": int(_read_scaled_from_model_u16(regs, value_index=17, sf_index=20)),
+                "inverter_apparent_power_l2_va": int(_read_scaled_from_model_u16(regs, value_index=18, sf_index=20)),
+                "inverter_apparent_power_l3_va": int(_read_scaled_from_model_u16(regs, value_index=19, sf_index=20)),
+                "inverter_reactive_power_var": reactive_total,
+                "inverter_reactive_power_l1_var": int(_read_scaled_from_model_i16(regs, value_index=22, sf_index=25)),
+                "inverter_reactive_power_l2_var": int(_read_scaled_from_model_i16(regs, value_index=23, sf_index=25)),
+                "inverter_reactive_power_l3_var": int(_read_scaled_from_model_i16(regs, value_index=24, sf_index=25)),
+                "inverter_power_factor": _derive_power_factor(
+                    active_total,
+                    apparent_total,
+                    _read_scaled_from_model_i16(regs, value_index=20, sf_index=21),
+                ),
+                "inverter_temperature_air_c": _read_scaled_from_model_i16(regs, value_index=31, sf_index=35),
+                "inverter_temperature_module_c": _read_scaled_from_model_i16(regs, value_index=33, sf_index=35),
+                "inverter_temperature_radiator_c": _read_scaled_from_model_i16(regs, value_index=32, sf_index=35),
+            }
+
+    model_111 = model_index.get(SUNSPEC_MODEL_111_ID)
+    if model_111 is not None:
+        model_start, model_len = model_111
+        model_id = SUNSPEC_MODEL_111_ID
+        _log_inverter_model_once(model_id, model_start, model_len)
+        regs = _read_register_block(client, model_start, model_len, slave_id)
+        if regs:
+            active_total = int(_read_f32_from_model(regs, value_index=20))
+            apparent_total = int(_read_f32_from_model(regs, value_index=24))
+            reactive_total = int(_read_f32_from_model(regs, value_index=26))
+            return {
+                "inverter_current_l1_a": _read_f32_from_model(regs, value_index=2),
+                "inverter_voltage_l1_v": _read_f32_from_model(regs, value_index=14),
+                "inverter_frequency_hz": _read_f32_from_model(regs, value_index=22),
+                "inverter_active_power_w": active_total,
+                "inverter_power_l1_w": active_total,
+                "inverter_apparent_power_va": apparent_total,
+                "inverter_apparent_power_l1_va": apparent_total,
+                "inverter_reactive_power_var": reactive_total,
+                "inverter_reactive_power_l1_var": reactive_total,
+                "inverter_power_factor": _derive_power_factor(active_total, apparent_total, _read_f32_from_model(regs, value_index=28)),
+                "inverter_temperature_air_c": _read_f32_from_model(regs, value_index=38),
+                "inverter_temperature_module_c": _read_f32_from_model(regs, value_index=42),
+                "inverter_temperature_radiator_c": _read_f32_from_model(regs, value_index=40),
             }
 
     model_101 = model_index.get(SUNSPEC_MODEL_101_ID)
     if model_101 is not None:
         model_start, model_len = model_101
+        model_id = SUNSPEC_MODEL_101_ID
+        _log_inverter_model_once(model_id, model_start, model_len)
         regs = _read_register_block(client, model_start, model_len, slave_id)
         if regs:
+            apparent_total = int(_read_scaled_from_model_u16(regs, value_index=8, sf_index=9))
+            active_total = int(_read_scaled_from_model_i16(regs, value_index=4, sf_index=5))
+            reactive_total = int(_read_scaled_from_model_i16(regs, value_index=10, sf_index=11))
             return {
-                "inverter_current_l1_a": _read_scaled_from_model_u16(regs, value_index=1, sf_index=3),
+                "inverter_current_l1_a": _read_scaled_from_model_u16(regs, value_index=0, sf_index=1),
                 "inverter_voltage_l1_v": _read_scaled_from_model_u16(regs, value_index=2, sf_index=3),
-                "inverter_frequency_hz": _read_scaled_from_model_u16(regs, value_index=3, sf_index=4),
-                "inverter_active_power_w": int(_read_scaled_from_model_i16(regs, value_index=4, sf_index=5)),
-                "inverter_power_l1_w": int(_read_scaled_from_model_i16(regs, value_index=4, sf_index=5)),
-                "inverter_apparent_power_va": int(_read_scaled_from_model_u16(regs, value_index=8, sf_index=9)),
-                "inverter_apparent_power_l1_va": int(_read_scaled_from_model_u16(regs, value_index=8, sf_index=9)),
-                "inverter_reactive_power_var": int(_read_scaled_from_model_i16(regs, value_index=10, sf_index=11)),
-                "inverter_reactive_power_l1_var": int(_read_scaled_from_model_i16(regs, value_index=10, sf_index=11)),
+                "inverter_frequency_hz": _read_scaled_from_model_u16(regs, value_index=6, sf_index=7),
+                "inverter_active_power_w": active_total,
+                "inverter_power_l1_w": active_total,
+                "inverter_apparent_power_va": apparent_total,
+                "inverter_apparent_power_l1_va": apparent_total,
+                "inverter_reactive_power_var": reactive_total,
+                "inverter_reactive_power_l1_var": reactive_total,
+                "inverter_power_factor": _derive_power_factor(
+                    active_total,
+                    apparent_total,
+                    _read_scaled_from_model_i16(regs, value_index=20, sf_index=21),
+                ),
+                "inverter_temperature_air_c": _read_scaled_from_model_i16(regs, value_index=31, sf_index=35),
+                "inverter_temperature_module_c": _read_scaled_from_model_i16(regs, value_index=33, sf_index=35),
+                "inverter_temperature_radiator_c": _read_scaled_from_model_i16(regs, value_index=32, sf_index=35),
             }
 
     return {}
@@ -318,6 +462,64 @@ def _read_optional_channels(client: ModbusTcpClient, slave_id: int, string_count
             out[f"pv{idx}_power_w"] = _to_i16(rr.registers[2])
 
     return out
+
+
+def _read_f32_from_model(regs: list[int], value_index: int) -> float:
+    if value_index < 0 or value_index + 1 >= len(regs):
+        return 0.0
+
+    hi = regs[value_index] & 0xFFFF
+    lo = regs[value_index + 1] & 0xFFFF
+    value = struct.unpack(">f", struct.pack(">HH", hi, lo))[0]
+    if not math.isfinite(value):
+        return 0.0
+    return float(value)
+
+
+def _split_total_by_weights(total: int, weights: list[float]) -> tuple[int, int, int]:
+    if len(weights) != 3:
+        return 0, 0, total
+
+    clamped = [max(0.0, float(w)) for w in weights]
+    weight_sum = sum(clamped)
+    if weight_sum <= 0.0:
+        base = int(total / 3)
+        remainder = total - (base * 3)
+        return base, base, base + remainder
+
+    l1 = int(total * (clamped[0] / weight_sum))
+    l2 = int(total * (clamped[1] / weight_sum))
+    l3 = total - l1 - l2
+    return l1, l2, l3
+
+
+def _clamp_power_factor(value: float) -> float:
+    if not math.isfinite(value):
+        return 1.0
+    return max(-1.0, min(1.0, float(value)))
+
+
+def _derive_power_factor(active_power_w: int, apparent_power_va: int, candidate: float) -> float:
+    if abs(candidate) > 0.0:
+        return _clamp_power_factor(candidate)
+
+    if apparent_power_va == 0:
+        return 1.0
+
+    return _clamp_power_factor(float(active_power_w) / float(apparent_power_va))
+
+
+def _log_inverter_model_once(model_id: int, model_start: int, model_len: int) -> None:
+    if model_id in _LOGGED_INVERTER_MODELS:
+        return
+
+    _LOGGED_INVERTER_MODELS.add(model_id)
+    logger.warning(
+        "Fronius inverter AC SunSpec model detected: id=%s start=%s len=%s",
+        model_id,
+        model_start,
+        model_len,
+    )
 
 
 def _read_sunspec_model_160(

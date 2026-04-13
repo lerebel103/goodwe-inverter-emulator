@@ -68,11 +68,23 @@ def _runtime_data(regs: dict[int, int], snapshot: Snapshot) -> None:
     total_pv = int(snapshot.pv1_power_w + snapshot.pv2_power_w + snapshot.pv3_power_w + snapshot.pv4_power_w)
     if total_pv <= 0:
         total_pv = int(snapshot.pv_power_w)
-    put_i32(regs, 35137, total_pv)
+    total_inverter_power = int(snapshot.inverter_active_power_w) if int(snapshot.inverter_active_power_w) != 0 else total_pv
+    put_i32(regs, 35137, total_inverter_power)
 
     put_i16(regs, 35140, int(snapshot.inverter_active_power_w))
     put_i16(regs, 35142, int(snapshot.inverter_reactive_power_var))
     put_u16(regs, 35144, max(0, int(snapshot.inverter_apparent_power_va)))
+    put_i16(regs, 35174, int(snapshot.inverter_temperature_air_c * 10.0))
+    put_i16(regs, 35175, int(snapshot.inverter_temperature_module_c * 10.0))
+    put_i16(regs, 35176, int(snapshot.inverter_temperature_radiator_c * 10.0))
+    # Extended inverter per-phase reactive/apparent channels used by the SDK
+    # (reactive_power1..3, apparent_power1..3).
+    put_i32(regs, 35353, int(snapshot.inverter_reactive_power_l1_var))
+    put_i32(regs, 35355, int(snapshot.inverter_reactive_power_l2_var))
+    put_i32(regs, 35357, int(snapshot.inverter_reactive_power_l3_var))
+    put_i32(regs, 35359, int(snapshot.inverter_apparent_power_l1_va))
+    put_i32(regs, 35361, int(snapshot.inverter_apparent_power_l2_va))
+    put_i32(regs, 35363, int(snapshot.inverter_apparent_power_l3_va))
     put_i32(regs, 35182, int(snapshot.battery_power_w))
     put_u16(regs, 35180, int(snapshot.battery_voltage_v * 10))
     put_i16(regs, 35181, int(snapshot.battery_power_w / max(snapshot.battery_voltage_v, 1) * 10))
@@ -185,6 +197,7 @@ def _battery_data(regs: dict[int, int], snapshot: Snapshot) -> None:
 def _settings(regs: dict[int, int], snapshot: Snapshot, cfg: GoodweEmulatorConfig) -> None:
     put_u16(regs, 45127, cfg.comm_addr)
     put_u16(regs, 45356, 100 - int(snapshot.battery_soc_pct))
+    put_i16(regs, 45482, int(snapshot.inverter_power_factor * 100.0))
     put_u16(regs, 47000, 0)
     put_u16(regs, 47509, 1)
     put_u16(regs, 47510, int(snapshot.grid_export_limit_w))
