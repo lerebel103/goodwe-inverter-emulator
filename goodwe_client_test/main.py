@@ -29,6 +29,19 @@ def _as_int(value, default: int = 0) -> int:
         return default
 
 
+async def _read_external_model_name(inverter) -> str:
+    """Best-effort low-level read of register 35060 (16 regs, ASCII)."""
+    try:
+        cmd = inverter._read_command(35060, 16)
+        response = await inverter._read_from_socket(cmd)
+        payload = response.response_data()
+        if not payload:
+            return ""
+        return bytes(payload[:32]).decode("ascii", errors="ignore").rstrip(" \x00")
+    except Exception:
+        return ""
+
+
 def _split_total_weighted(total: int, weights: tuple[float, float, float]) -> tuple[int, int, int]:
     w1, w2, w3 = (max(0.0, float(w)) for w in weights)
     s = w1 + w2 + w3
@@ -43,7 +56,9 @@ def _split_total_weighted(total: int, weights: tuple[float, float, float]) -> tu
     return p1, p2, p3
 
 
-def _decode_from_sdk(data: dict[str, object], model_name: str | None) -> dict[str, object]:
+def _decode_from_sdk(
+    data: dict[str, object], model_name: str | None, external_model_name: str | None
+) -> dict[str, object]:
     ts = _pick(data, "timestamp", "timestamp_utc")
     if isinstance(ts, datetime):
         year_2digit = ts.year % 100
@@ -157,6 +172,8 @@ def _decode_from_sdk(data: dict[str, object], model_name: str | None) -> dict[st
     return {
         "device": {
             "model_name": model_name or _pick(data, "model_name", default=""),
+            "external_model_name": external_model_name
+            or _pick(data, "external_model_name", default=""),
             "rtc": {
                 "year_2digit": year_2digit,
                 "month": month,
@@ -297,6 +314,9 @@ async def poll_once(host: str, port: int, unit_id: int, timeout: float, family: 
     )
     runtime_data = await inverter.read_runtime_data()
     model_name = str(getattr(inverter, "model_name", "") or "")
+    external_model_name = str(getattr(inverter, "external_model_name", "") or "")
+    if not external_model_name:
+        external_model_name = await _read_external_model_name(inverter)
 
     try:
         runtime_data["power_factor"] = await inverter.read_setting("power_factor")
@@ -408,7 +428,7 @@ async def poll_once(host: str, port: int, unit_id: int, timeout: float, family: 
         "source": "goodwe-sdk",
         "sdk_sensor_count": len(runtime_data),
         "sdk_selected_values": selected,
-        "decoded_key_values": _decode_from_sdk(runtime_data, model_name),
+        "decoded_key_values": _decode_from_sdk(runtime_data, model_name, external_model_name),
     }
 
 

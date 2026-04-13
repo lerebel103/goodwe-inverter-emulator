@@ -23,7 +23,9 @@ def _device_info(regs: dict[int, int], cfg: GoodweEmulatorConfig) -> None:
     put_u16(regs, 35002, 1)
     put_ascii(regs, 35003, cfg.serial_number, 8)
     put_ascii(regs, 35011, cfg.model_name, 5)
-    put_ascii(regs, 35060, cfg.external_model_name, 16)
+    # Preserve historical behavior: blank external model leaves 35060 block as implicit zeros.
+    if (cfg.external_model_name or "").strip():
+        put_ascii(regs, 35060, cfg.external_model_name, 16)
     put_u16(regs, 35016, 100)
     put_u16(regs, 35017, 100)
     put_u16(regs, 35018, 1)
@@ -197,6 +199,8 @@ def _settings(regs: dict[int, int], snapshot: Snapshot, cfg: GoodweEmulatorConfi
     put_u16(regs, 45127, cfg.comm_addr)
     put_u16(regs, 45356, 100 - int(snapshot.battery_soc_pct))
     put_i16(regs, 45482, int(snapshot.inverter_power_factor * 100.0))
+    # 47906 is exposed as a Voltage sensor by clients (0.1V units on-wire).
+    put_u16(regs, 47906, max(0, int(snapshot.battery_voltage_v * 10.0)))
     put_u16(regs, 47000, 0)
     put_u16(regs, 47509, 1)
     put_u16(regs, 47510, int(snapshot.grid_export_limit_w))

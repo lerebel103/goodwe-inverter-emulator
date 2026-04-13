@@ -208,6 +208,7 @@ def test_battery_current_registers_use_snapshot_current_not_derived_power_ratio(
     assert regs[35183] == 5200
     assert regs[37006] == 5200
     assert regs[37007] == 123
+    assert regs[47906] == 5200
 
 
 def test_external_model_name_written_to_register_35060():
@@ -224,3 +225,13 @@ def test_external_model_name_written_to_register_35060():
     # Decode the ASCII string from registers
     decoded = get_ascii(regs, 35060, 16)
     assert decoded == "EM540+Fronius+Victron"
+
+
+def test_blank_external_model_name_keeps_register_35060_block_zeroed():
+    cfg = GoodweEmulatorConfig(external_model_name="")
+    snap = Snapshot()
+    regs = build_register_map(snap, cfg)
+
+    # Prior behavior: keep these registers unwritten so reads return implicit zeros.
+    for address in range(35060, 35076):
+        assert regs.get(address, 0) == 0
