@@ -6,6 +6,12 @@ em540_bridge:
   timeout: 1.0
   retry_count: 1
   log_level: INFO
+  synthetic_grid_export_enabled: false
+  synthetic_grid_total_power_w: -4500
+  synthetic_grid_voltage_l1_v: 229.4
+  synthetic_grid_voltage_l2_v: 230.1
+  synthetic_grid_voltage_l3_v: 230.5
+  synthetic_grid_frequency_hz: 50.0
 
 fronius:
   enabled: true
@@ -17,6 +23,10 @@ fronius:
   timeout: 1.0
   retry_count: 1
   log_level: INFO
+  synthetic_pv_enabled: false
+  synthetic_pv_total_power_w: 8200
+  synthetic_pv1_voltage_v: 500.0
+  synthetic_pv2_voltage_v: 500.0
 
 victron:
   enabled: true

@@ -244,3 +244,46 @@ def test_runtime_applies_victron_battery_scaling_before_publishing():
     assert regs[37016] == 200
     assert regs[37017] == 0
     assert regs[37018] == 500
+
+
+def test_runtime_applies_synthetic_pv_and_grid_export_overrides():
+    runtime, fake_server = _make_runtime()
+    runtime._cfg.fronius.synthetic_pv_enabled = True
+    runtime._cfg.fronius.synthetic_pv_total_power_w = 8200
+    runtime._cfg.fronius.synthetic_pv1_voltage_v = 500.0
+    runtime._cfg.fronius.synthetic_pv2_voltage_v = 500.0
+
+    runtime._cfg.em540_bridge.synthetic_grid_export_enabled = True
+    runtime._cfg.em540_bridge.synthetic_grid_total_power_w = -4500
+    runtime._cfg.em540_bridge.synthetic_grid_voltage_l1_v = 229.4
+    runtime._cfg.em540_bridge.synthetic_grid_voltage_l2_v = 230.1
+    runtime._cfg.em540_bridge.synthetic_grid_voltage_l3_v = 230.5
+    runtime._cfg.em540_bridge.synthetic_grid_frequency_hz = 50.0
+
+    # Empty upstream payloads are allowed for this test when synthetic injection is enabled.
+    runtime._em540 = _Reader([{}])
+    runtime._fronius = _Reader([{}])
+    runtime._victron = _Reader([_valid_victron()])
+
+    assert runtime._refresh_once() is True
+
+    regs = fake_server.updated_payloads[0]
+
+    # PV total 8.2kW split evenly with 500V per string => 8.2A per string.
+    assert regs[35103] == 5000
+    assert regs[35104] == 82
+    assert regs[35106] == 4100
+    assert regs[35107] == 5000
+    assert regs[35108] == 82
+    assert regs[35110] == 4100
+    assert regs[35138] == 8200
+
+    # Grid export: -4.5kW split per phase near 230V gives about 6.5A per phase.
+    assert regs[36052] == 2294
+    assert regs[36053] == 2301
+    assert regs[36054] == 2305
+    assert regs[36055] == 65
+    assert regs[36056] == 65
+    assert regs[36057] == 65
+    assert regs[36025] == 0xFFFF
+    assert regs[36026] == 0xEE6C
