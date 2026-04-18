@@ -96,7 +96,12 @@ class EmulatorRuntime:
             data = reader()
         except Exception:
             logger.exception("Unhandled %s reader failure", name)
-            return _SourcePollResult(name=name, success=False, data={})
+            data = {}
+
+        if name == "em540":
+            data = self._apply_em540_synthetic_grid_export(data)
+        elif name == "fronius":
+            data = self._apply_fronius_synthetic_pv(data)
 
         if name == "victron":
             data = self._transform_victron_battery_data(data)
@@ -138,6 +143,88 @@ class EmulatorRuntime:
             if key in out:
                 out[key] = float(out[key]) / scale
 
+        return out
+
+    def _apply_fronius_synthetic_pv(self, data: dict[str, float | int]) -> dict[str, float | int]:
+        if not self._cfg.fronius.synthetic_pv_enabled:
+            return data
+
+        out: dict[str, float | int] = dict(data)
+        total_power = max(0, int(self._cfg.fronius.synthetic_pv_total_power_w))
+        pv1_power = total_power // 2
+        pv2_power = total_power - pv1_power
+        pv1_voltage = max(1.0, float(self._cfg.fronius.synthetic_pv1_voltage_v))
+        pv2_voltage = max(1.0, float(self._cfg.fronius.synthetic_pv2_voltage_v))
+
+        out.update(
+            {
+                "pv_power_w": total_power,
+                "pv1_voltage_v": pv1_voltage,
+                "pv1_current_a": float(pv1_power / pv1_voltage),
+                "pv1_power_w": pv1_power,
+                "pv2_voltage_v": pv2_voltage,
+                "pv2_current_a": float(pv2_power / pv2_voltage),
+                "pv2_power_w": pv2_power,
+                "pv3_voltage_v": 0.0,
+                "pv3_current_a": 0.0,
+                "pv3_power_w": 0,
+                "pv4_voltage_v": 0.0,
+                "pv4_current_a": 0.0,
+                "pv4_power_w": 0,
+            }
+        )
+        return out
+
+    def _apply_em540_synthetic_grid_export(self, data: dict[str, float | int]) -> dict[str, float | int]:
+        if not self._cfg.em540_bridge.synthetic_grid_export_enabled:
+            return data
+
+        out: dict[str, float | int] = dict(data)
+        total_power = int(self._cfg.em540_bridge.synthetic_grid_total_power_w)
+        l1_power = int(total_power / 3)
+        l2_power = int(total_power / 3)
+        l3_power = total_power - l1_power - l2_power
+
+        v1 = float(out.get("meter_voltage_l1_v", 0.0))
+        v2 = float(out.get("meter_voltage_l2_v", 0.0))
+        v3 = float(out.get("meter_voltage_l3_v", 0.0))
+        freq_hz = max(0.1, float(self._cfg.em540_bridge.synthetic_grid_frequency_hz))
+
+        # EM540 currents are reported as magnitudes while active power sign encodes import/export.
+        c1 = abs(float(l1_power) / v1) if v1 > 0 else 0.0
+        c2 = abs(float(l2_power) / v2) if v2 > 0 else 0.0
+        c3 = abs(float(l3_power) / v3) if v3 > 0 else 0.0
+
+        out.update(
+            {
+                "meter_power_w": total_power,
+                "meter_power_l1_w": l1_power,
+                "meter_power_l2_w": l2_power,
+                "meter_power_l3_w": l3_power,
+                "meter_reactive_power_l1_w": 0,
+                "meter_reactive_power_l2_w": 0,
+                "meter_reactive_power_l3_w": 0,
+                "meter_reactive_power_total_w": 0,
+                "meter_apparent_power_l1_w": abs(l1_power),
+                "meter_apparent_power_l2_w": abs(l2_power),
+                "meter_apparent_power_l3_w": abs(l3_power),
+                "meter_apparent_power_total_w": abs(l1_power) + abs(l2_power) + abs(l3_power),
+                "meter_power_factor_l1": -1.0,
+                "meter_power_factor_l2": -1.0,
+                "meter_power_factor_l3": -1.0,
+                "meter_power_factor_total": -1.0,
+                "meter_frequency_hz": freq_hz,
+                "meter_current_l1_a": c1,
+                "meter_current_l2_a": c2,
+                "meter_current_l3_a": c3,
+            }
+        )
+
+        out.setdefault("meter_e_total_exp_kwh", 0.0)
+        out.setdefault("meter_e_total_imp_kwh", 0.0)
+        out.setdefault("meter_e_total_imp_l1_kwh", 0.0)
+        out.setdefault("meter_e_total_imp_l2_kwh", 0.0)
+        out.setdefault("meter_e_total_imp_l3_kwh", 0.0)
         return out
 
     @staticmethod

@@ -20,6 +20,9 @@ class Em540BridgeConfig:
     timeout: float = 1.0
     retry_count: int = 1
     log_level: str = "INFO"
+    synthetic_grid_export_enabled: bool = False
+    synthetic_grid_total_power_w: int = -4500
+    synthetic_grid_frequency_hz: float = 50.0
 
 
 @dataclass
@@ -33,6 +36,10 @@ class FroniusConfig:
     timeout: float = 1.0
     retry_count: int = 1
     log_level: str = "INFO"
+    synthetic_pv_enabled: bool = False
+    synthetic_pv_total_power_w: int = 8200
+    synthetic_pv1_voltage_v: float = 500.0
+    synthetic_pv2_voltage_v: float = 500.0
 
 
 @dataclass

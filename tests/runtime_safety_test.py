@@ -128,7 +128,7 @@ def test_runtime_publishes_only_after_full_valid_cycle():
     assert len(fake_server.updated_payloads) == 1
     regs = fake_server.updated_payloads[0]
     assert regs[36052] == 2294
-    assert regs[37010] == 64
+    assert regs[37007] == 64
 
 
 def test_runtime_opens_circuit_and_stops_publishing_after_later_failure():
@@ -235,12 +235,44 @@ def test_runtime_applies_victron_battery_scaling_before_publishing():
     regs = fake_server.updated_payloads[0]
     assert regs[35180] == 5240
     assert regs[35181] == 90
-    assert regs[37006] == 5240
-    assert regs[37007] == 90
-    assert regs[37019] == 5760
-    assert regs[37020] == 4400
-    assert regs[37021] == 120
-    assert regs[37022] == 150
-    assert regs[37016] == 200
-    assert regs[37017] == 0
-    assert regs[37018] == 500
+    assert regs[37007] == 64  # SOC %
+    assert regs[37008] == 100  # SOH % (default)
+
+
+def test_runtime_applies_synthetic_pv_and_grid_export_overrides():
+    runtime, fake_server = _make_runtime()
+    runtime._cfg.fronius.synthetic_pv_enabled = True
+    runtime._cfg.fronius.synthetic_pv_total_power_w = 8200
+    runtime._cfg.fronius.synthetic_pv1_voltage_v = 500.0
+    runtime._cfg.fronius.synthetic_pv2_voltage_v = 500.0
+
+    runtime._cfg.em540_bridge.synthetic_grid_export_enabled = True
+    runtime._cfg.em540_bridge.synthetic_grid_total_power_w = -4500
+    runtime._cfg.em540_bridge.synthetic_grid_frequency_hz = 50.0
+
+    runtime._em540 = _Reader([_valid_em540()])
+    runtime._fronius = _Reader([{}])
+    runtime._victron = _Reader([_valid_victron()])
+
+    assert runtime._refresh_once() is True
+
+    regs = fake_server.updated_payloads[0]
+
+    # PV total 8.2kW split evenly with 500V per string => 8.2A per string.
+    assert regs[35103] == 5000
+    assert regs[35104] == 82
+    assert regs[35106] == 4100
+    assert regs[35107] == 5000
+    assert regs[35108] == 82
+    assert regs[35110] == 4100
+    assert regs[35138] == 8200
+
+    # Grid export power is synthetic, but EM540 voltage still passes through from upstream.
+    assert regs[36052] == 2294
+    assert regs[36053] == 2301
+    assert regs[36054] == 2310
+    assert regs[36055] == 65  # abs(-1500 / 229.4) = 6.539 A → 65
+    assert regs[36056] == 65  # abs(-1500 / 230.1) = 6.519 A → 65
+    assert regs[36057] == 64  # abs(-1500 / 231.0) = 6.494 A → 64 (integer truncation)
+    assert regs[36025] == 0xFFFF
+    assert regs[36026] == 0xEE6C

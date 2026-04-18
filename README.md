@@ -53,6 +53,17 @@ Use `docker compose` directly to pull and run that image (without local rebuild)
 - `goodwe_emulator.comm_addr`: Modbus device ID expected by your downstream client (for example charger)
 - `goodwe_emulator.socket_port`: TCP listening port for downstream clients
 
+Optional synthetic test profile (for lab validation without changing upstream devices):
+
+- `fronius.synthetic_pv_enabled`: force PV telemetry to configured synthetic values
+- `fronius.synthetic_pv_total_power_w`: total PV power (default `8200` W), split evenly over PV1/PV2
+- `fronius.synthetic_pv1_voltage_v`, `fronius.synthetic_pv2_voltage_v`: PV string voltages used to derive current with `P = V x I`
+- `em540_bridge.synthetic_grid_export_enabled`: force meter active power to synthetic grid export values
+- `em540_bridge.synthetic_grid_total_power_w`: total grid active power (default `-4500` W export)
+- `em540_bridge.synthetic_grid_frequency_hz`: injected grid frequency
+
+When synthetic grid export is enabled, live EM540 voltages still pass through from the upstream meter, while active power sign remains the source of import/export direction and currents are reported as magnitudes.
+
 3. Start with pre-built image:
 
 ```bash
@@ -156,7 +167,7 @@ For reference, the following addresses are requested by the HCA G2:
 | 35060 | 16 | `[18263, 12592, 19245, 17748, 8224, 8224, ...]` | External Model Name (string block) | `GW10K-ET` |
 | 35100 | 1 | `[6660]` | RTC packed year/month | `0x1A04` => year `26`, month `4` |
 | 35137 | 2 | `[0, 2652] .. [0, 2673]` | Signed 32-bit total inverter/PV watts | `2652..2673 W` |
-| 37007 | 1 | `[65535]` | Battery current (`0.1 A`, signed i16) | `-0.1 A` |
+| 37007 | 1 | `[64]` | Battery SOC (BMS Operation Data, `U16`, `1 %` scale) | `64 %` |
 | 39005 | 1 | `[0]` | BMS2 SOC (secondary battery channel) | `0 %` |
 | 35180 | 1 | `[5480]` | Battery voltage (`0.1 V` scale) | `548.0 V` |
 | 47906 | 1 | `[5480]` | BMS battery voltage (`0.1 V` scale, RW BMS path) | `548.0 V` |
