@@ -22,9 +22,6 @@ class Em540BridgeConfig:
     log_level: str = "INFO"
     synthetic_grid_export_enabled: bool = False
     synthetic_grid_total_power_w: int = -4500
-    synthetic_grid_voltage_l1_v: float = 229.4
-    synthetic_grid_voltage_l2_v: float = 230.1
-    synthetic_grid_voltage_l3_v: float = 230.5
     synthetic_grid_frequency_hz: float = 50.0
 
 

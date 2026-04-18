@@ -12,7 +12,7 @@ def test_register_map_contains_core_blocks():
     assert regs[35001] == cfg.rated_power
     assert 35103 in regs
     assert 36025 in regs
-    assert regs[37010] == 64
+    assert regs[37007] == 64
     assert regs[47510] == 0
 
 
@@ -206,8 +206,7 @@ def test_battery_current_registers_use_snapshot_current_not_derived_power_ratio(
     assert regs[35181] == 123
     assert regs[35182] == 0
     assert regs[35183] == 5200
-    assert regs[37006] == 5200
-    assert regs[37007] == 123
+    assert regs[37007] == 50  # SOC = snapshot default (50 %)
     assert regs[47906] == 5200
 
 

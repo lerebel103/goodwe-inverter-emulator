@@ -156,43 +156,18 @@ def _meter_data(regs: dict[int, int], snapshot: Snapshot) -> None:
 
 
 def _battery_data(regs: dict[int, int], snapshot: Snapshot) -> None:
-    """Map battery data to GoodWe ET battery registers."""
-    # Battery status and control
-    put_u16(regs, 37000, 1)  # Battery connect status: 1=connected
-    put_u16(regs, 37003, 250)  # Battery capacity
+    """Map battery BMS data to GoodWe ET registers.
 
-    # Battery voltage and current
-    put_u16(regs, 37006, int(snapshot.battery_voltage_v * 10))  # Battery voltage
-    put_i16(regs, 37007, int(snapshot.battery_current_a * 10))  # Battery current
-
-    # Battery power
-    put_i32(regs, 37008, int(snapshot.battery_power_w))  # Battery power
-
-    # Battery SOC and state
-    put_u16(regs, 37010, int(snapshot.battery_soc_pct))  # SOC
-    put_u16(regs, 37011, snapshot.battery_state)  # Battery state (0=idle, 1=charging, 2=discharging)
-
-    # Battery temperature (if available)
-    put_i16(regs, 37013, int(snapshot.battery_temperature_c * 10))  # Battery temperature
-
-    # Battery health
-    put_u16(regs, 37015, int(snapshot.battery_state_of_health_pct))  # State of health
-
-    # Battery capacity and consumed energy
-    put_u16(regs, 37016, int(snapshot.battery_capacity_ah))  # Capacity
-    put_i32(regs, 37017, int(snapshot.battery_consumed_ah * 10))  # Consumed Ah (scale 10)
-
-    # Battery voltage limits
-    put_u16(regs, 37019, int(snapshot.battery_max_charge_voltage_v * 10))  # Max charge voltage
-    put_u16(regs, 37020, int(snapshot.battery_min_discharge_voltage_v * 10))  # Min discharge voltage
-
-    # Battery current limits
-    put_i16(regs, 37021, int(snapshot.battery_max_charge_current_a * 10))  # Max charge current
-    put_i16(regs, 37022, int(snapshot.battery_max_discharge_current_a * 10))  # Max discharge current
-
-    # Battery alarms and errors
-    put_u16(regs, 37023, snapshot.battery_alarm)  # Alarm status
-    put_u16(regs, 37024, snapshot.battery_error)  # Error code
+    Battery runtime data (voltage at 35180, current at 35181, power at 35182) is
+    written by _runtime_data.  This function only writes the BMS Operation Data
+    block (37000+) per the GoodWe 745 Modbus spec.
+    """
+    # 37003: BMS Package Temperature (U16, scale 10, °C)
+    put_u16(regs, 37003, max(0, int(snapshot.battery_temperature_c * 10)))
+    # 37007: SOC – Capacity of BAT1 (U16, scale 1, %)
+    put_u16(regs, 37007, int(snapshot.battery_soc_pct))
+    # 37008: BMS SOH (U16, scale 1, %)
+    put_u16(regs, 37008, int(snapshot.battery_state_of_health_pct))
 
 
 def _settings(regs: dict[int, int], snapshot: Snapshot, cfg: GoodweEmulatorConfig) -> None:

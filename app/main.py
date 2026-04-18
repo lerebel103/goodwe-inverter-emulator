@@ -185,15 +185,15 @@ class EmulatorRuntime:
         l2_power = int(total_power / 3)
         l3_power = total_power - l1_power - l2_power
 
-        v1 = max(1.0, float(self._cfg.em540_bridge.synthetic_grid_voltage_l1_v))
-        v2 = max(1.0, float(self._cfg.em540_bridge.synthetic_grid_voltage_l2_v))
-        v3 = max(1.0, float(self._cfg.em540_bridge.synthetic_grid_voltage_l3_v))
+        v1 = float(out.get("meter_voltage_l1_v", 0.0))
+        v2 = float(out.get("meter_voltage_l2_v", 0.0))
+        v3 = float(out.get("meter_voltage_l3_v", 0.0))
         freq_hz = max(0.1, float(self._cfg.em540_bridge.synthetic_grid_frequency_hz))
 
         # EM540 currents are reported as magnitudes while active power sign encodes import/export.
-        c1 = abs(float(l1_power) / v1)
-        c2 = abs(float(l2_power) / v2)
-        c3 = abs(float(l3_power) / v3)
+        c1 = abs(float(l1_power) / v1) if v1 > 0 else 0.0
+        c2 = abs(float(l2_power) / v2) if v2 > 0 else 0.0
+        c3 = abs(float(l3_power) / v3) if v3 > 0 else 0.0
 
         out.update(
             {
@@ -214,9 +214,6 @@ class EmulatorRuntime:
                 "meter_power_factor_l3": -1.0,
                 "meter_power_factor_total": -1.0,
                 "meter_frequency_hz": freq_hz,
-                "meter_voltage_l1_v": v1,
-                "meter_voltage_l2_v": v2,
-                "meter_voltage_l3_v": v3,
                 "meter_current_l1_a": c1,
                 "meter_current_l2_a": c2,
                 "meter_current_l3_a": c3,
